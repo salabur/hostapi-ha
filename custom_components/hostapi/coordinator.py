@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -53,7 +54,7 @@ class HostAPICoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=f"hostapi_{entry.data.get('host')}",
-            update_interval=30,
+            update_interval=timedelta(seconds=30),
         )
 
     @property
