@@ -25,6 +25,10 @@ class HostAPIHealthSensor(SensorEntity):
         self._state = "unknown"
 
     @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -58,6 +62,10 @@ class HostAPIDisplayProfileSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_display_profile"
         self._attr_icon = "mdi:monitor"
         self._state = None
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
 
     @property
     def base_url(self) -> str:
@@ -97,6 +105,10 @@ class HostAPIScriptsSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_scripts"
         self._attr_icon = "mdi:script"
         self._state = []
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
 
     @property
     def base_url(self) -> str:
@@ -142,6 +154,10 @@ class HostAPIServicesSensor(SensorEntity):
         self._state = []
 
     @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -183,6 +199,10 @@ class HostAPITasksSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_tasks"
         self._attr_icon = "mdi:clipboard-list"
         self._state = []
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
 
     @property
     def base_url(self) -> str:

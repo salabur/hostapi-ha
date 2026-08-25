@@ -5,7 +5,7 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import CONF_HOST
 
-from . import DOMAIN
+from . import DOMAIN, get_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,11 +34,7 @@ class HostAPIServiceSwitch(SwitchEntity):
 
     @property
     def device_info(self) -> dict:
-        return {
-            "identifiers": {(DOMAIN, self.entry.entry_id)},
-            "name": f"HostAPI ({self.entry.data.get(CONF_HOST, 'unknown')})",
-            "manufacturer": "HostAPI",
-        }
+        return get_device_info(self.entry)
 
     async def async_turn_on(self) -> None:
         try:

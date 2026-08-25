@@ -5,7 +5,7 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import CONF_HOST
 
-from . import DOMAIN
+from . import DOMAIN, get_device_info
 
 CONF_API_VERSION = "/api/v1"
 
@@ -22,6 +22,9 @@ class HostAPIButtonEntity(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_script_{script_name}"
         self._attr_icon = "mdi:play"
 
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
     @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
@@ -54,6 +57,9 @@ class HostAPIStartServiceButton(ButtonEntity):
         self._attr_icon = "mdi:play"
 
     @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -83,6 +89,9 @@ class HostAPIStopServiceButton(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_service_stop_{service_name}"
         self._attr_icon = "mdi:stop"
 
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
     @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
@@ -114,6 +123,9 @@ class HostAPIRestartServiceButton(ButtonEntity):
         self._attr_icon = "mdi:restart"
 
     @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -143,6 +155,9 @@ class HostAPIStopTaskButton(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_task_stop_{task_id}"
         self._attr_icon = "mdi:stop"
 
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
     @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
@@ -214,6 +229,13 @@ class HostAPIOsRestartButton(ButtonEntity):
         self._attr_icon = "mdi:restart"
 
     @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -242,6 +264,13 @@ class HostAPIOsShutdownButton(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_os_shutdown"
         self._attr_icon = "mdi:power"
 
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
     @property
     def base_url(self) -> str:
         data = self.entry.runtime_data

@@ -5,7 +5,7 @@ import logging
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import CONF_HOST
 
-from . import DOMAIN
+from . import DOMAIN, get_device_info
 
 CONF_API_VERSION = "/api/v1"
 
@@ -23,6 +23,10 @@ class HostAPIDisplayProfileSelect(SelectEntity):
         self._attr_icon = "mdi:monitor"
         self._attr_options = profiles
         self._current = None
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
 
     @property
     def base_url(self) -> str:

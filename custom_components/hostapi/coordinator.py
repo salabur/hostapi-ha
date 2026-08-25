@@ -32,6 +32,7 @@ class HostAPIData:
     host: str
     port: int
     api_token: str
+    device_name: str | None = None
 
 
 class HostAPICoordinator(DataUpdateCoordinator):
