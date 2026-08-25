@@ -54,7 +54,6 @@ class HostAPIDisplayProfileSensor(SensorEntity):
     """Display profile sensor."""
 
     def __init__(self, entry):
-        super().__init__(entry=entry)
         self.entry = entry
         self._attr_name = f"HostAPI ({entry.data.get(CONF_HOST)}) Display Profile"
         self._attr_unique_id = f"{entry.entry_id}_display_profile"
