@@ -3,9 +3,7 @@
 import logging
 from typing import Optional
 
-from homeassistant.const import STATE_CLASS_MEASUREMENT
-from homeassistant.components.sensor import SensorEntity
-
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_HOST
 
 DOMAIN = "hostapi"
@@ -97,7 +95,7 @@ class HostAPIDisplayProfileSensor(SensorEntity):
 class HostAPIScriptsSensor(SensorEntity):
     """Scripts sensor with state_class."""
 
-    _attr_state_class = STATE_CLASS_MEASUREMENT
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, entry):
         self.entry = entry
@@ -144,7 +142,7 @@ class HostAPIScriptsSensor(SensorEntity):
 class HostAPIServicesSensor(SensorEntity):
     """Services sensor - lists systemd services."""
 
-    _attr_state_class = STATE_CLASS_MEASUREMENT
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, entry):
         self.entry = entry
@@ -191,7 +189,7 @@ class HostAPIServicesSensor(SensorEntity):
 class HostAPITasksSensor(SensorEntity):
     """Tasks sensor - shows running task count."""
 
-    _attr_state_class = STATE_CLASS_MEASUREMENT
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, entry):
         self.entry = entry
