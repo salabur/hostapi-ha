@@ -1,10 +1,12 @@
 """Config flow for HostAPI."""
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_API_KEY, CONF_API_TOKEN
+from homeassistant.const import CONF_API_KEY, CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import AbortFlow
 import voluptuous as vol
 import aiohttp
+
+from . import DOMAIN
 
 
 class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
