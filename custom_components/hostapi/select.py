@@ -50,6 +50,9 @@ class HostAPIDisplayProfileSelect(SelectEntity):
                 if response.status == 200:
                     data = await response.json()
                     self._current = data.get("display_profile")
+                    profiles = data.get("available_profiles", [])
+                    if profiles and profiles != self._attr_options:
+                        self._attr_options = profiles
         except Exception as e:
             _LOGGER.error("Failed to update profile: %s", e)
 
