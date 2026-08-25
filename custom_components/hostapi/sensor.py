@@ -6,6 +6,8 @@ from typing import Optional
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_HOST
 
+from . import DOMAIN, get_device_info
+
 DOMAIN = "hostapi"
 CONF_API_VERSION = "/api/v1"
 
