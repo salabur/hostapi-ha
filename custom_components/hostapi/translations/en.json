@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HostAPI",
+        "description": "Connect to a HostAPI instance.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "api_key": "API Token",
+          "wake_entity": "Wake entity (WOL)",
+          "ha_url": "Home Assistant URL"
+        },
+        "error": { "cannot_connect": "Cannot connect" }
+      },
+      "reconfigure": {
+        "title": "Reconfigure HostAPI",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "api_key": "API Token",
+          "wake_entity": "Wake entity (WOL)",
+          "ha_url": "Home Assistant URL"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HostAPI Options",
+        "description": "Configure HostAPI options.",
+        "data": {
+          "ha_url": "Home Assistant URL"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_os": { "name": "Current OS" },
+      "os_status": { "name": "OS Switch Status" }
+    },
+    "select": {
+      "boot_os": { "name": "Boot OS" }
+    },
+    "button": {
+      "cancel_switch": { "name": "Cancel OS Switch" }
+    },
+    "binary_sensor": {
+      "switch_pending": { "name": "OS Switch Pending" }
+    }
+  },
+  "services": {
+    "switch_os": {
+      "name": "Switch OS",
+      "description": "Reboot into the given OS.",
+      "fields": {
+        "target": { "name": "Target OS", "description": "linux or windows" },
+        "delay_seconds": { "name": "Delay", "description": "Countdown seconds" }
+      }
+    },
+    "cancel_os_switch": {
+      "name": "Cancel OS Switch",
+      "description": "Cancel a pending OS switch."
+    },
+    "wake": {
+      "name": "Wake Host",
+      "description": "Wake the host via the configured WOL entity."
+    }
+  }
+}

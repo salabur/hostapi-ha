@@ -1,0 +1,15 @@
+rules:
+  config_flow: done
+  docs_high_level_description: done
+  docs_installation: done
+  docs_configuration: done
+  docs_entities: done
+  docs_services: done
+  entity_category: done
+  translations: done
+  services: done
+  test_entities: done
+  test_config_flow: done
+  test_coordinator: done
+  iot_class: done
+  reauthentication: exempt

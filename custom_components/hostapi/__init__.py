@@ -48,6 +48,18 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
         device_name=device_name,
     )
 
+    ha_url = entry.data.get("ha_url") or entry.options.get("ha_url")
+    if ha_url:
+        try:
+            async with client_session.put(
+                f"http://{entry.data.get('host')}:{entry.data.get('port')}/settings/os-switch",
+                json={"ha_url": ha_url},
+                headers={"Authorization": f"Bearer {entry.data.get('api_key')}"},
+            ) as resp:
+                _LOGGER.debug("HA URL synced to hostapi: %s", resp.status)
+        except Exception as e:
+            _LOGGER.warning("Failed to sync HA URL to hostapi: %s", e)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
