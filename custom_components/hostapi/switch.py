@@ -4,10 +4,16 @@ import logging
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import CONF_HOST
+from homeassistant.helpers import entity_registry as er
 
 from . import DOMAIN, get_device_info
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_managed_service(svc: dict) -> bool:
+    """Only favorites and tab-created services get entities (and polling)."""
+    return bool(svc.get("name") and (svc.get("favorite") or svc.get("custom")))
 
 
 class HostAPIServiceSwitch(SwitchEntity):
@@ -72,6 +78,8 @@ class HostAPIServiceSwitch(SwitchEntity):
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up HostAPI service switches from config entry."""
     entities = []
+    service_names = []
+    discovered = False
 
     data = entry.runtime_data
     session = data.client
@@ -83,11 +91,34 @@ async def async_setup_entry(hass, entry, async_add_entities):
             if response.status == 200:
                 services_data = await response.json()
                 for svc in services_data.get("services", []):
-                    svc_name = svc.get("name", "")
-                    if svc_name:
-                        entities.append(HostAPIServiceSwitch(entry, svc_name))
+                    if _is_managed_service(svc):
+                        service_names.append(svc["name"])
+                        entities.append(HostAPIServiceSwitch(entry, svc["name"]))
+                discovered = True
     except Exception as e:
         _LOGGER.error("Failed to discover services for switch: %s", e)
 
+    if discovered:
+        _remove_stale_service_entities(
+            hass, entry, "switch", service_names, "_service_switch_"
+        )
+
     if entities:
         async_add_entities(entities)
+
+
+def _remove_stale_service_entities(
+    hass, entry, domain: str, service_names: list, marker: str
+) -> None:
+    """Remove previously-created service entities that are no longer managed.
+
+    Keeps HA from polling service statuses that the user un-favorited.
+    """
+    registry = er.async_get(hass)
+    wanted = {f"{entry.entry_id}{marker}{name}" for name in service_names}
+    for entity_entry in registry.async_entries_for_config_entry(entry.entry_id):
+        if entity_entry.domain != domain:
+            continue
+        uid = entity_entry.unique_id
+        if uid.startswith(f"{entry.entry_id}{marker}") and uid not in wanted:
+            registry.async_remove(entity_entry.entity_id)

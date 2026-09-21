@@ -4,6 +4,7 @@ import logging
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import CONF_HOST
+from homeassistant.helpers import entity_registry as er
 
 from . import DOMAIN, get_device_info
 
@@ -177,9 +178,23 @@ class HostAPIStopTaskButton(ButtonEntity):
             _LOGGER.error("Failed to stop task %s: %s", self._task_id, e)
 
 
+_SERVICE_BUTTON_MARKERS = (
+    "_service_start_",
+    "_service_stop_",
+    "_service_restart_",
+)
+
+
+def _is_managed_service(svc: dict) -> bool:
+    """Only favorites and tab-created services get entities."""
+    return bool(svc.get("name") and (svc.get("favorite") or svc.get("custom")))
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up HostAPI buttons from config entry."""
     entities = []
+    service_names = []
+    discovered = False
 
     data = entry.runtime_data
     session = data.client
@@ -206,19 +221,43 @@ async def async_setup_entry(hass, entry, async_add_entities):
             if response.status == 200:
                 services_data = await response.json()
                 for svc in services_data.get("services", []):
-                    svc_name = svc.get("name", "")
-                    if svc_name:
-                        entities.append(HostAPIStartServiceButton(entry, svc_name))
-                        entities.append(HostAPIStopServiceButton(entry, svc_name))
-                        entities.append(HostAPIRestartServiceButton(entry, svc_name))
+                    if _is_managed_service(svc):
+                        service_names.append(svc["name"])
+                        entities.append(HostAPIStartServiceButton(entry, svc["name"]))
+                        entities.append(HostAPIStopServiceButton(entry, svc["name"]))
+                        entities.append(HostAPIRestartServiceButton(entry, svc["name"]))
+                discovered = True
     except Exception as e:
         _LOGGER.error("Failed to discover services: %s", e)
+
+    if discovered:
+        _remove_stale_service_buttons(hass, entry, service_names)
 
     entities.append(HostAPIOsRestartButton(entry))
     entities.append(HostAPIOsShutdownButton(entry))
 
     if entities:
         async_add_entities(entities)
+
+
+def _remove_stale_service_buttons(hass, entry, service_names: list) -> None:
+    """Remove previously-created service buttons that are no longer managed."""
+    registry = er.async_get(hass)
+    wanted = {
+        f"{entry.entry_id}{marker}{name}"
+        for marker in _SERVICE_BUTTON_MARKERS
+        for name in service_names
+    }
+    for entity_entry in registry.async_entries_for_config_entry(entry.entry_id):
+        if entity_entry.domain != "button":
+            continue
+        uid = entity_entry.unique_id
+        if any(
+            uid.startswith(f"{entry.entry_id}{marker}") for marker in _SERVICE_BUTTON_MARKERS
+        ) and uid not in wanted:
+            registry.async_remove(entity_entry.entity_id)
+
+
 class HostAPIOsRestartButton(ButtonEntity):
     """Button to restart the host machine."""
 

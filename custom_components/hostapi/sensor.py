@@ -175,8 +175,10 @@ class HostAPIServicesSensor(SensorEntity):
 
     async def async_update(self):
         try:
+            # managed=true: only favorite/custom services - avoids making the
+            # hostapi server enumerate every systemd unit on every poll.
             async with self.session.get(
-                f"{self.base_url}/services/",
+                f"{self.base_url}/services/?managed=true",
                 headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
             ) as response:
                 if response.status == 200:
