@@ -5,6 +5,7 @@ from typing import Optional
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_HOST
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import DOMAIN, get_device_info
 
@@ -140,53 +141,32 @@ class HostAPIScriptsSensor(SensorEntity):
             self._state = []
 
 
-class HostAPIServicesSensor(SensorEntity):
-    """Services sensor - lists systemd services."""
+class HostAPIServicesSensor(CoordinatorEntity, SensorEntity):
+    """Services sensor - reads from the ServiceStateCoordinator (ws + 300s)."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, entry):
+    def __init__(self, entry, service_coordinator):
         self.entry = entry
+        self._service_coordinator = service_coordinator
         self._attr_name = f"HostAPI ({entry.data.get(CONF_HOST)}) Services"
         self._attr_unique_id = f"{entry.entry_id}_services"
         self._attr_icon = "mdi:format-list-bulleted"
-        self._state = []
+        CoordinatorEntity.__init__(self, service_coordinator)
 
     @property
     def device_info(self) -> dict:
         return get_device_info(self.entry)
 
     @property
-    def base_url(self) -> str:
-        data = self.entry.runtime_data
-        return f"http://{data.host}:{data.port}"
-
-    @property
-    def session(self):
-        return self.entry.runtime_data.client
-
-    @property
     def state(self) -> str:
-        return str(len(self._state))
+        data = self._service_coordinator.data or {}
+        return str(len(data.get("services", [])))
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"services": self._state}
-
-    async def async_update(self):
-        try:
-            # managed=true: only favorite/custom services - avoids making the
-            # hostapi server enumerate every systemd unit on every poll.
-            async with self.session.get(
-                f"{self.base_url}/services/?managed=true",
-                headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    self._state = data.get("services", [])
-        except Exception as e:
-            _LOGGER.error("Failed to update services: %s", e)
-            self._state = []
+        data = self._service_coordinator.data or {}
+        return {"services": data.get("services", [])}
 
 
 class HostAPITasksSensor(SensorEntity):
@@ -242,7 +222,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         HostAPIHealthSensor(entry),
         HostAPIDisplayProfileSensor(entry),
         HostAPIScriptsSensor(entry),
-        HostAPIServicesSensor(entry),
+        HostAPIServicesSensor(entry, entry.runtime_data.service_coordinator),
         HostAPITasksSensor(entry),
     ]
     async_add_entities(entities)

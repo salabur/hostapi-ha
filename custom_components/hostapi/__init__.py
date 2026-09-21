@@ -5,7 +5,8 @@ import logging
 import aiohttp
 from homeassistant.core import HomeAssistant
 
-from .coordinator import HostAPICoordinator, HostAPIData
+from .coordinator import HostAPICoordinator, HostAPIData, ServiceStateCoordinator
+from .websocket import ServiceStateListener
 
 DOMAIN = "hostapi"
 
@@ -39,6 +40,8 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     if coordinator.data:
         device_name = coordinator.data.get("device_name")
 
+    service_coordinator = ServiceStateCoordinator(hass, entry, client_session)
+
     entry.runtime_data = HostAPIData(
         client=client_session,
         coordinator=coordinator,
@@ -46,6 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
         port=entry.data.get("port"),
         api_token=entry.data.get("api_key"),
         device_name=device_name,
+        service_coordinator=service_coordinator,
     )
 
     ha_url = entry.data.get("ha_url") or entry.options.get("ha_url")
@@ -62,11 +66,37 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Live push: hybrid model - ws events patch the service coordinator in
+    # place; on every (re)connect the coordinator takes a full REST
+    # snapshot, and its 300s poll is the fallback safety net.
+    def _on_ws_message(message: dict) -> None:
+        mtype = message.get("type")
+        if mtype == "service":
+            service_coordinator.apply_service_state(
+                message.get("name"), bool(message.get("active"))
+            )
+        elif mtype in ("_connected", "services_changed"):
+            # (re)connected or the managed set changed: full REST snapshot
+            service_coordinator.async_refresh()
+
+    token = entry.data.get("api_key")
+    listener = ServiceStateListener(
+        session=client_session,
+        ws_url=f"ws://{entry.data.get('host')}:{entry.data.get('port')}/ws?token={token}",
+        token=token,
+        on_message=_on_ws_message,
+    )
+    entry.runtime_data.ws_listener = listener
+    await listener.start()
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     """Unload a config entry."""
+    listener = getattr(entry.runtime_data, "ws_listener", None)
+    if listener is not None:
+        await listener.stop()
     await entry.runtime_data.coordinator.async_shutdown()
     await entry.runtime_data.client.close()
 
