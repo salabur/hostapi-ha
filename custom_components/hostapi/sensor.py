@@ -215,6 +215,34 @@ class HostAPITasksSensor(SensorEntity):
             self._state = []
 
 
+class HostAPIOsStatusSensor(CoordinatorEntity, SensorEntity):
+    """OS switch status (current OS / pending switch) from /api/v1/info."""
+
+    def __init__(self, entry, coordinator):
+        super().__init__(coordinator)
+        self.entry = entry
+        self._attr_name = "OS Switch Status"
+        self._attr_unique_id = f"{entry.entry_id}_os_status"
+        self._attr_icon = "mdi:harddisk"
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def state(self) -> str:
+        data = self.coordinator.data or {}
+        return data.get("os_status") or "unknown"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.data or {}
+        return {
+            "current_os": data.get("current_os"),
+            "mac": data.get("mac"),
+        }
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up HostAPI sensors from config entry."""
     entities = [
@@ -223,6 +251,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         HostAPIScriptsSensor(entry),
         HostAPIServicesSensor(entry, entry.runtime_data.service_coordinator),
         HostAPITasksSensor(entry),
+        HostAPIOsStatusSensor(entry, entry.runtime_data.coordinator),
     ]
     async_add_entities(entities)
 

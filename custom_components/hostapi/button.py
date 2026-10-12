@@ -2,6 +2,7 @@
 
 import logging
 
+import aiohttp
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers import entity_registry as er
 
@@ -155,6 +156,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities.append(HostAPIOsShutdownButton(entry))
     entities.append(HostAPIRebootToOsButton(entry, "windows"))
     entities.append(HostAPIRebootToOsButton(entry, "linux"))
+    entities.append(HostAPICancelOsSwitchButton(entry))
+    entities.append(HostAPIWakeButton(hass, entry))
     async_add_entities(entities)
 
     # Dynamic restart buttons for favorited services (shape opt-in)
@@ -291,6 +294,15 @@ class HostAPIRebootToOsButton(ButtonEntity):
     def session(self):
         return self.entry.runtime_data.client
 
+    @property
+    def available(self) -> bool:
+        """Hide switching to the OS the host is already on."""
+        coordinator = self.entry.runtime_data.coordinator
+        if not getattr(coordinator, "last_update_success", True):
+            return False
+        data = coordinator.data or {}
+        return data.get("current_os") != self._target_os
+
     async def async_press(self):
         try:
             async with self.session.post(
@@ -301,5 +313,143 @@ class HostAPIRebootToOsButton(ButtonEntity):
                 pass
         except Exception as e:
             _LOGGER.error("Failed to schedule reboot to %s: %s", self._target_os, e)
+
+
+class HostAPICancelOsSwitchButton(ButtonEntity):
+    """Cancels a pending OS switch (enabled only while a switch is pending)."""
+
+    def __init__(self, entry):
+        self.entry = entry
+        self._attr_name = "Cancel OS Switch"
+        self._attr_unique_id = f"{entry.entry_id}_os_switch_cancel"
+        self._attr_icon = "mdi:close-octagon"
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def base_url(self) -> str:
+        data = self.entry.runtime_data
+        return f"http://{data.host}:{data.port}"
+
+    @property
+    def session(self):
+        return self.entry.runtime_data.client
+
+    @property
+    def available(self) -> bool:
+        coordinator = self.entry.runtime_data.coordinator
+        if not getattr(coordinator, "last_update_success", True):
+            return False
+        data = coordinator.data or {}
+        return data.get("os_status") == "pending"
+
+    async def async_press(self):
+        try:
+            async with self.session.post(
+                f"{self.base_url}{CONF_API_VERSION}/os/switch/cancel",
+                headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
+            ):
+                pass
+        except Exception as e:
+            _LOGGER.error("Failed to cancel OS switch: %s", e)
+
+
+def wol_payload(mac: str) -> bytes:
+    """Build a Wake-on-LAN magic packet from a MAC string."""
+    clean = mac.replace(":", "").replace("-", "").lower()
+    if len(clean) != 12:
+        raise ValueError(f"invalid MAC: {mac}")
+    return b"\xff" * 6 + bytes.fromhex(clean) * 16
+
+
+def _send_udp_wol(mac: str) -> None:
+    """Fire a raw WOL packet (fallback when HA's wake_onlan isn't set up)."""
+    import socket
+
+    payload = wol_payload(mac)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.sendto(payload, ("255.255.255.255", 9))
+
+
+class HostAPIWakeButton(ButtonEntity):
+    """Wake the host via WOL - configurable per entry (options flow):
+
+    - native/HA magic packet (default; uses HA's wake_onlan service when
+      set up, raw UDP otherwise)
+    - user-selectable HA automation (plus the hostapi_wake event)
+    - OPNsense WOL endpoint (generic authenticated POST with mac/host)
+    """
+
+    def __init__(self, hass, entry):
+        self.hass = hass
+        self.entry = entry
+        self._attr_name = "Wake"
+        self._attr_unique_id = f"{entry.entry_id}_wake"
+        self._attr_icon = "mdi:power-on"
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def _mac(self):
+        coordinator = self.entry.runtime_data.coordinator
+        data = getattr(coordinator, "data", None) or {}
+        return data.get("mac")
+
+    @property
+    def available(self) -> bool:
+        opts = self.entry.options
+        return bool(
+            self._mac
+            or opts.get("wake_automation")
+            or opts.get("opnsense_wol_url")
+        )
+
+    async def async_press(self):
+        mac = self._mac
+        opts = self.entry.options
+        automation = opts.get("wake_automation")
+        opnsense_url = opts.get("opnsense_wol_url")
+
+        if mac and self.hass.services.has_service("wake_onlan", "send_magic_packet"):
+            await self.hass.services.async_call(
+                "wake_onlan", "send_magic_packet", {"mac": mac}, blocking=False
+            )
+        elif mac:
+            await self.hass.async_add_executor_job(_send_udp_wol, mac)
+
+        if automation:
+            await self.hass.services.async_call(
+                "automation", "trigger", {"entity_id": automation}, blocking=False
+            )
+
+        # event so any user automation can react without the options picker
+        self.hass.bus.async_fire("hostapi_wake", {
+            "host": self.entry.runtime_data.host, "mac": mac,
+        })
+
+        if opnsense_url:
+            await self._wake_opnsense(opnsense_url, opts, mac)
+
+    async def _wake_opnsense(self, url, opts, mac):
+        key = opts.get("opnsense_api_key")
+        secret = opts.get("opnsense_api_secret")
+        auth = aiohttp.BasicAuth(key, secret) if key and secret else None
+        try:
+            async with self.session.post(
+                url, json={"mac": mac, "host": self.entry.runtime_data.host},
+                auth=auth,
+            ):
+                pass
+        except Exception as e:
+            _LOGGER.error("Failed to call OPNsense WOL endpoint: %s", e)
+
+    @property
+    def session(self):
+        return self.entry.runtime_data.client
 
 

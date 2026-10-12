@@ -10,6 +10,10 @@ from . import DOMAIN
 
 CONF_WAKE_ENTITY = "wake_entity"
 CONF_HA_URL = "ha_url"
+CONF_WAKE_AUTOMATION = "wake_automation"
+CONF_OPNSENSE_WOL_URL = "opnsense_wol_url"
+CONF_OPNSENSE_API_KEY = "opnsense_api_key"
+CONF_OPNSENSE_API_SECRET = "opnsense_api_secret"
 
 DEFAULT_WAKE_ENTITY = "switch.hal_switch_template"
 DEFAULT_HA_URL = "http://homeassistant.local:8123"
@@ -139,15 +143,35 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        opts = self.config_entry.options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         CONF_HA_URL,
-                        default=self.config_entry.data.get(
-                            CONF_HA_URL, DEFAULT_HA_URL
+                        default=opts.get(
+                            CONF_HA_URL,
+                            self.config_entry.data.get(CONF_HA_URL, DEFAULT_HA_URL),
                         ),
+                    ): str,
+                    vol.Optional(
+                        CONF_WAKE_AUTOMATION,
+                        description="HA automation/script entity to trigger on Wake",
+                        default=opts.get(CONF_WAKE_AUTOMATION, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_WOL_URL,
+                        description="OPNsense WOL endpoint (POST, authenticated)",
+                        default=opts.get(CONF_OPNSENSE_WOL_URL, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_API_KEY,
+                        default=opts.get(CONF_OPNSENSE_API_KEY, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_API_SECRET,
+                        default=opts.get(CONF_OPNSENSE_API_SECRET, ""),
                     ): str,
                 }
             ),
