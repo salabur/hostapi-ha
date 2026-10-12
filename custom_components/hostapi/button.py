@@ -153,6 +153,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities.append(HostAPIOsRestartButton(entry))
     entities.append(HostAPIOsShutdownButton(entry))
+    entities.append(HostAPIRebootToOsButton(entry, "windows"))
+    entities.append(HostAPIRebootToOsButton(entry, "linux"))
     async_add_entities(entities)
 
     # Dynamic restart buttons for favorited services (shape opt-in)
@@ -261,5 +263,43 @@ class HostAPIOsShutdownButton(ButtonEntity):
                 pass
         except Exception as e:
             _LOGGER.error("Failed to shutdown host: %s", e)
+
+
+class HostAPIRebootToOsButton(ButtonEntity):
+    """Button to reboot straight into the other OS (os_switch module)."""
+
+    _TITLES = {"windows": "Reboot to Windows", "linux": "Reboot to Linux"}
+    _ICONS = {"windows": "mdi:microsoft-windows", "linux": "mdi:linux"}
+
+    def __init__(self, entry, target_os: str):
+        self.entry = entry
+        self._target_os = target_os
+        self._attr_name = self._TITLES.get(target_os, f"Reboot to {target_os}")
+        self._attr_unique_id = f"{entry.entry_id}_reboot_to_{target_os}"
+        self._attr_icon = self._ICONS.get(target_os, "mdi:restart")
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def base_url(self) -> str:
+        data = self.entry.runtime_data
+        return f"http://{data.host}:{data.port}"
+
+    @property
+    def session(self):
+        return self.entry.runtime_data.client
+
+    async def async_press(self):
+        try:
+            async with self.session.post(
+                f"{self.base_url}{CONF_API_VERSION}/os/switch",
+                json={"target": self._target_os},
+                headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
+            ):
+                pass
+        except Exception as e:
+            _LOGGER.error("Failed to schedule reboot to %s: %s", self._target_os, e)
 
 
