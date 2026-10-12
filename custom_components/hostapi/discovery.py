@@ -2,8 +2,6 @@
 
 import logging
 
-from homeassistant.helpers.zeroconf import async_service_info_received
-
 from . import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)

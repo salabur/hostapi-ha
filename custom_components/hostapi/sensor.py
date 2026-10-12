@@ -7,9 +7,8 @@ from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_HOST
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import DOMAIN, get_device_info
+from . import get_device_info
 
-DOMAIN = "hostapi"
 CONF_API_VERSION = "/api/v1"
 
 _LOGGER = logging.getLogger(__name__)
@@ -226,3 +225,56 @@ async def async_setup_entry(hass, entry, async_add_entities):
         HostAPITasksSensor(entry),
     ]
     async_add_entities(entities)
+
+    # Dynamic per-service state sensors (opt-in via HA entity shape)
+    from .service_entities import make_service_entity_sync
+
+    coordinator = entry.runtime_data.service_coordinator
+    await coordinator.async_refresh()
+
+    created: dict = {}
+
+    def build(name, kind, svc):
+        return HostAPIServiceStateSensor(entry, name, coordinator)
+
+    sync = make_service_entity_sync(
+        hass,
+        coordinator,
+        async_add_entities,
+        kinds_for=lambda svc: ("sensor",) if svc.get("ha_sensor") else (),
+        build=build,
+        created=created,
+    )
+    sync()
+    entry.async_on_unload(coordinator.async_add_listener(sync))
+
+
+class HostAPIServiceStateSensor(CoordinatorEntity, SensorEntity):
+    """Per-service state sensor (opt-in via the web UI detail panel)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:atom"
+
+    def __init__(self, entry, service_name: str, service_coordinator):
+        self.entry = entry
+        self._service_name = service_name
+        self._service_coordinator = service_coordinator
+        self._attr_name = f"Service {service_name}"
+        self._attr_unique_id = f"{entry.entry_id}_service_sensor_{service_name}"
+        CoordinatorEntity.__init__(self, service_coordinator)
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def available(self) -> bool:
+        return self._service_coordinator.last_update_success
+
+    @property
+    def state(self) -> str:
+        data = self._service_coordinator.data or {}
+        for svc in data.get("services", []):
+            if svc.get("name") == self._service_name:
+                return "on" if svc.get("active") else "off"
+        return "unknown"

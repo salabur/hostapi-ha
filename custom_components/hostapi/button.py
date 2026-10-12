@@ -3,10 +3,9 @@
 import logging
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.const import CONF_HOST
 from homeassistant.helpers import entity_registry as er
 
-from . import DOMAIN, get_device_info
+from . import get_device_info
 
 CONF_API_VERSION = "/api/v1"
 
@@ -47,74 +46,8 @@ class HostAPIButtonEntity(ButtonEntity):
             _LOGGER.error("Failed to run script %s: %s", self._script_name, e)
 
 
-class HostAPIStartServiceButton(ButtonEntity):
-    """Button to start a systemd service."""
-
-    def __init__(self, entry, service_name: str):
-        self.entry = entry
-        self._service_name = service_name
-        self._attr_name = f"Start {service_name}"
-        self._attr_unique_id = f"{entry.entry_id}_service_start_{service_name}"
-        self._attr_icon = "mdi:play"
-
-    @property
-    def device_info(self) -> dict:
-        return get_device_info(self.entry)
-    @property
-    def base_url(self) -> str:
-        data = self.entry.runtime_data
-        return f"http://{data.host}:{data.port}"
-
-    @property
-    def session(self):
-        return self.entry.runtime_data.client
-
-    async def async_press(self):
-        try:
-            async with self.session.post(
-                f"{self.base_url}/services/{self._service_name}/start",
-                headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
-            ):
-                pass
-        except Exception as e:
-            _LOGGER.error("Failed to start service %s: %s", self._service_name, e)
-
-
-class HostAPIStopServiceButton(ButtonEntity):
-    """Button to stop a systemd service."""
-
-    def __init__(self, entry, service_name: str):
-        self.entry = entry
-        self._service_name = service_name
-        self._attr_name = f"Stop {service_name}"
-        self._attr_unique_id = f"{entry.entry_id}_service_stop_{service_name}"
-        self._attr_icon = "mdi:stop"
-
-    @property
-    def device_info(self) -> dict:
-        return get_device_info(self.entry)
-    @property
-    def base_url(self) -> str:
-        data = self.entry.runtime_data
-        return f"http://{data.host}:{data.port}"
-
-    @property
-    def session(self):
-        return self.entry.runtime_data.client
-
-    async def async_press(self):
-        try:
-            async with self.session.post(
-                f"{self.base_url}/services/{self._service_name}/stop",
-                headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
-            ):
-                pass
-        except Exception as e:
-            _LOGGER.error("Failed to stop service %s: %s", self._service_name, e)
-
-
 class HostAPIRestartServiceButton(ButtonEntity):
-    """Button to restart a systemd service."""
+    """Button to restart a systemd service (opt-in via HA entity shape)."""
 
     def __init__(self, entry, service_name: str):
         self.entry = entry
@@ -191,10 +124,15 @@ def _is_managed_service(svc: dict) -> bool:
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up HostAPI buttons from config entry."""
+    """Set up HostAPI buttons from config entry.
+
+    Per-service buttons are shape-driven and dynamic: only the restart
+    button exists, and only when the user enabled it in the web UI
+    (service detail panel). The switch already covers start/stop.
+    """
+    from .service_entities import make_service_entity_sync, managed_services
+
     entities = []
-    service_names = []
-    discovered = False
 
     data = entry.runtime_data
     session = data.client
@@ -213,31 +151,32 @@ async def async_setup_entry(hass, entry, async_add_entities):
     except Exception as e:
         _LOGGER.error("Failed to discover scripts: %s", e)
 
-    try:
-        async with session.get(
-            f"{base_url}/services/",
-            headers=headers
-        ) as response:
-            if response.status == 200:
-                services_data = await response.json()
-                for svc in services_data.get("services", []):
-                    if _is_managed_service(svc):
-                        service_names.append(svc["name"])
-                        entities.append(HostAPIStartServiceButton(entry, svc["name"]))
-                        entities.append(HostAPIStopServiceButton(entry, svc["name"]))
-                        entities.append(HostAPIRestartServiceButton(entry, svc["name"]))
-                discovered = True
-    except Exception as e:
-        _LOGGER.error("Failed to discover services: %s", e)
-
-    if discovered:
-        _remove_stale_service_buttons(hass, entry, service_names)
-
     entities.append(HostAPIOsRestartButton(entry))
     entities.append(HostAPIOsShutdownButton(entry))
+    async_add_entities(entities)
 
-    if entities:
-        async_add_entities(entities)
+    # Dynamic restart buttons for favorited services (shape opt-in)
+    coordinator = data.service_coordinator
+    await coordinator.async_refresh()
+
+    created: dict = {}
+
+    def build(name, kind, svc):
+        return HostAPIRestartServiceButton(entry, name)
+
+    sync = make_service_entity_sync(
+        hass,
+        coordinator,
+        async_add_entities,
+        kinds_for=lambda svc: ("restart",) if svc.get("ha_restart_button") else (),
+        build=build,
+        created=created,
+    )
+    sync()
+    entry.async_on_unload(coordinator.async_add_listener(sync))
+
+    # One-time registry cleanup for buttons created by older versions
+    _remove_stale_service_buttons(hass, entry, list(managed_services(coordinator)))
 
 
 def _remove_stale_service_buttons(hass, entry, service_names: list) -> None:
@@ -272,9 +211,6 @@ class HostAPIOsRestartButton(ButtonEntity):
         return get_device_info(self.entry)
 
     @property
-    def device_info(self) -> dict:
-        return get_device_info(self.entry)
-    @property
     def base_url(self) -> str:
         data = self.entry.runtime_data
         return f"http://{data.host}:{data.port}"
@@ -307,9 +243,6 @@ class HostAPIOsShutdownButton(ButtonEntity):
     def device_info(self) -> dict:
         return get_device_info(self.entry)
 
-    @property
-    def device_info(self) -> dict:
-        return get_device_info(self.entry)
     @property
     def base_url(self) -> str:
         data = self.entry.runtime_data

@@ -8,18 +8,13 @@ poll the hostapi individually.
 import logging
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import CONF_HOST
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import DOMAIN, get_device_info
+from . import get_device_info
+from .service_entities import make_service_entity_sync, managed_services
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _is_managed_service(svc: dict) -> bool:
-    """Only favorites and tab-created services get entities (and polling)."""
-    return bool(svc.get("name") and (svc.get("favorite") or svc.get("custom")))
 
 
 class HostAPIServiceSwitch(CoordinatorEntity, SwitchEntity):
@@ -88,39 +83,42 @@ class HostAPIServiceSwitch(CoordinatorEntity, SwitchEntity):
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up HostAPI service switches from config entry."""
-    entities = []
-    service_names = []
-    discovered = False
+    """Set up HostAPI service switches from config entry.
 
+    Entities are dynamic: a listener on the service coordinator adds a
+    switch when a service is favorited and removes it on unfavorite -
+    within ~1s of the web UI toggle, no entry reload needed.
+    """
     data = entry.runtime_data
-    session = data.client
-    base_url = f"http://{data.host}:{data.port}"
-    headers = {"Authorization": f"Bearer {data.api_token}"}
+    coordinator = data.service_coordinator
 
-    try:
-        async with session.get(f"{base_url}/services/", headers=headers) as response:
-            if response.status == 200:
-                services_data = await response.json()
-                for svc in services_data.get("services", []):
-                    if _is_managed_service(svc):
-                        service_names.append(svc["name"])
-                        entities.append(
-                            HostAPIServiceSwitch(
-                                entry, svc["name"], data.service_coordinator
-                            )
-                        )
-                discovered = True
-    except Exception as e:
-        _LOGGER.error("Failed to discover services for switch: %s", e)
+    # Make sure we have fresh managed-service data before diffing
+    await coordinator.async_refresh()
 
-    if discovered:
-        _remove_stale_service_entities(
-            hass, entry, "switch", service_names, "_service_switch_"
-        )
+    # One-time registry cleanup for entities created by older versions
+    _remove_stale_service_entities(
+        hass,
+        entry,
+        "switch",
+        list(managed_services(coordinator)),
+        "_service_switch_",
+    )
 
-    if entities:
-        async_add_entities(entities)
+    created: dict = {}
+
+    def build(name, kind, svc):
+        return HostAPIServiceSwitch(entry, name, coordinator)
+
+    sync = make_service_entity_sync(
+        hass,
+        coordinator,
+        async_add_entities,
+        kinds_for=lambda svc: ("switch",),
+        build=build,
+        created=created,
+    )
+    sync()
+    entry.async_on_unload(coordinator.async_add_listener(sync))
 
 
 def _remove_stale_service_entities(

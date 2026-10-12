@@ -5,7 +5,7 @@ import logging
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import CONF_HOST
 
-from . import DOMAIN, get_device_info
+from . import get_device_info
 
 CONF_API_VERSION = "/api/v1"
 

@@ -77,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
             )
         elif mtype in ("_connected", "services_changed"):
             # (re)connected or the managed set changed: full REST snapshot
-            service_coordinator.async_refresh()
+            hass.async_create_task(service_coordinator.async_refresh())
 
     token = entry.data.get("api_key")
     listener = ServiceStateListener(
