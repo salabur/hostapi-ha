@@ -309,8 +309,17 @@ class HostAPIRebootToOsButton(ButtonEntity):
                 f"{self.base_url}{CONF_API_VERSION}/os/switch",
                 json={"target": self._target_os},
                 headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
-            ):
-                pass
+            ) as response:
+                if response.status == 200:
+                    body = await response.json()
+                    if not body.get("success"):
+                        _LOGGER.error(
+                            "Reboot to %s rejected: %s",
+                            self._target_os, body.get("error"))
+                else:
+                    _LOGGER.error(
+                        "Reboot to %s failed: HTTP %s",
+                        self._target_os, response.status)
         except Exception as e:
             _LOGGER.error("Failed to schedule reboot to %s: %s", self._target_os, e)
 
@@ -350,8 +359,15 @@ class HostAPICancelOsSwitchButton(ButtonEntity):
             async with self.session.post(
                 f"{self.base_url}{CONF_API_VERSION}/os/switch/cancel",
                 headers={"Authorization": f"Bearer {self.entry.runtime_data.api_token}"}
-            ):
-                pass
+            ) as response:
+                if response.status == 200:
+                    body = await response.json()
+                    if not body.get("success"):
+                        _LOGGER.error(
+                            "Cancel OS switch rejected: %s", body.get("error"))
+                else:
+                    _LOGGER.error(
+                        "Cancel OS switch failed: HTTP %s", response.status)
         except Exception as e:
             _LOGGER.error("Failed to cancel OS switch: %s", e)
 

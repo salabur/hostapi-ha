@@ -6,23 +6,32 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 
 from .coordinator import HostAPICoordinator, HostAPIData, ServiceStateCoordinator
+from .host_coordinator import HostEntryData, HostStateCoordinator
 from .websocket import ServiceStateListener
 
 DOMAIN = "hostapi"
 
 _LOGGER = logging.getLogger(__name__)
 
+KIND_HOSTAPI = "hostapi"
+KIND_HOST = "host"
+
 
 def get_device_info(entry) -> dict:
     """Return HA device info using the hostapi device name (hostname-os)."""
+    if entry.data.get("kind") == KIND_HOST:
+        name = entry.data.get("name") or f"Host ({entry.data.get('host')})"
+    else:
+        name = (getattr(entry.runtime_data, "device_name", None)
+                or f"HostAPI ({entry.data.get('host', 'unknown')})")
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": getattr(entry.runtime_data, "device_name", None)
-        or f"HostAPI ({entry.data.get('host', 'unknown')})",
+        "name": name,
         "manufacturer": "HostAPI",
     }
 
 PLATFORMS = ["sensor", "switch", "button", "select"]
+HOST_PLATFORMS = ["binary_sensor", "sensor", "button"]
 
 
 async def async_setup(hass, config):
@@ -32,6 +41,15 @@ async def async_setup(hass, config):
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     """Set up a config entry."""
     client_session = aiohttp.ClientSession()
+
+    if entry.data.get("kind") == KIND_HOST:
+        coordinator = HostStateCoordinator(hass, entry, client_session)
+        entry.runtime_data = HostEntryData(
+            client=client_session, coordinator=coordinator)
+        await coordinator.async_config_entry_first_refresh()
+        await hass.config_entries.async_forward_entry_setups(
+            entry, HOST_PLATFORMS)
+        return True
 
     coordinator = HostAPICoordinator(hass, entry, client_session)
     await coordinator.async_config_entry_first_refresh()
@@ -94,6 +112,8 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     """Unload a config entry."""
+    platforms = (HOST_PLATFORMS
+                 if entry.data.get("kind") == KIND_HOST else PLATFORMS)
     listener = getattr(entry.runtime_data, "ws_listener", None)
     if listener is not None:
         await listener.stop()
@@ -101,7 +121,7 @@ async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     await entry.runtime_data.client.close()
 
     return await hass.config_entries.async_unload_entries(
-        entry, PLATFORMS
+        entry, platforms
     )
 
 

@@ -3,6 +3,14 @@
     "step": {
       "user": {
         "title": "HostAPI",
+        "description": "Add a device: a HostAPI instance or a generic SSH host.",
+        "data": {
+          "kind": "Device type"
+        },
+        "error": { "cannot_connect": "Cannot connect" }
+      },
+      "hostapi_connection": {
+        "title": "HostAPI instance",
         "description": "Connect to a HostAPI instance.",
         "data": {
           "host": "Host",
@@ -12,6 +20,51 @@
           "ha_url": "Home Assistant URL"
         },
         "error": { "cannot_connect": "Cannot connect" }
+      },
+      "host_connection": {
+        "title": "Generic host (SSH)",
+        "description": "Name and address of a machine managed via SSH.",
+        "data": {
+          "name": "Name",
+          "host": "IP address",
+          "ssh_port": "SSH port",
+          "ssh_user": "SSH user",
+          "ssh_password": "SSH password (optional)",
+          "ssh_key": "SSH private key content or path (optional)"
+        },
+        "error": { "cannot_connect": "Cannot connect" }
+      },
+      "host_alive": {
+        "title": "Alive check",
+        "description": "How and how often to check if the host is alive.",
+        "data": {
+          "alive_method": "Check method",
+          "alive_port": "TCP port (for the TCP probe)",
+          "poll_interval": "Poll interval (seconds)",
+          "offline_threshold": "Missed answers before offline"
+        }
+      },
+      "host_commands": {
+        "title": "Commands",
+        "description": "Commands run over SSH (target needs NOPASSWD sudoers for defaults).",
+        "data": {
+          "reboot_cmd": "Reboot command",
+          "shutdown_cmd": "Shutdown command",
+          "boot_os_cmd": "Boot-to-OS command ({entry} = grub entry)",
+          "grub_entry_windows": "GRUB entry for Windows",
+          "grub_entry_linux": "GRUB entry for Linux"
+        }
+      },
+      "host_wake": {
+        "title": "Wake (optional)",
+        "description": "How to wake the host.",
+        "data": {
+          "wol_mac": "WOL MAC address",
+          "wake_automation": "Automation/script entity to trigger",
+          "opnsense_wol_url": "OPNsense WOL endpoint (POST, authenticated)",
+          "opnsense_api_key": "OPNsense API key",
+          "opnsense_api_secret": "OPNsense API secret"
+        }
       },
       "reconfigure": {
         "title": "Reconfigure HostAPI",
@@ -33,12 +86,34 @@
         "data": {
           "ha_url": "Home Assistant URL"
         }
+      },
+      "host_options": {
+        "title": "Host Options",
+        "description": "Polling, commands and wake settings for this host.",
+        "data": {
+          "alive_method": "Check method",
+          "alive_port": "TCP port (for the TCP probe)",
+          "poll_interval": "Poll interval (seconds)",
+          "offline_threshold": "Missed answers before offline",
+          "reboot_cmd": "Reboot command",
+          "shutdown_cmd": "Shutdown command",
+          "boot_os_cmd": "Boot-to-OS command ({entry} = grub entry)",
+          "wol_mac": "WOL MAC address",
+          "wake_automation": "Automation/script entity to trigger",
+          "opnsense_wol_url": "OPNsense WOL endpoint (POST, authenticated)",
+          "opnsense_api_key": "OPNsense API key",
+          "opnsense_api_secret": "OPNsense API secret"
+        }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "alive": { "name": "Alive" }
+    },
     "sensor": {
       "current_os": { "name": "Current OS" },
+      "last_active": { "name": "Last Active" },
       "os_status": { "name": "OS Switch Status" }
     },
     "select": {

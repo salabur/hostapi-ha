@@ -215,6 +215,31 @@ class HostAPITasksSensor(SensorEntity):
             self._state = []
 
 
+class HostAPIOsSensor(CoordinatorEntity, SensorEntity):
+    """Currently booted OS (linux/windows) from /api/v1/info."""
+
+    _ICONS = {"windows": "mdi:microsoft-windows", "linux": "mdi:linux"}
+
+    def __init__(self, entry, coordinator):
+        super().__init__(coordinator)
+        self.entry = entry
+        self._attr_name = "Current OS"
+        self._attr_unique_id = f"{entry.entry_id}_current_os"
+
+    @property
+    def device_info(self) -> dict:
+        return get_device_info(self.entry)
+
+    @property
+    def state(self) -> str:
+        data = self.coordinator.data or {}
+        return data.get("current_os") or "unknown"
+
+    @property
+    def icon(self) -> str:
+        return self._ICONS.get(self.state, "mdi:restart")
+
+
 class HostAPIOsStatusSensor(CoordinatorEntity, SensorEntity):
     """OS switch status (current OS / pending switch) from /api/v1/info."""
 
@@ -240,6 +265,7 @@ class HostAPIOsStatusSensor(CoordinatorEntity, SensorEntity):
         return {
             "current_os": data.get("current_os"),
             "mac": data.get("mac"),
+            "switch_error": data.get("switch_error"),
         }
 
 
@@ -251,6 +277,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         HostAPIScriptsSensor(entry),
         HostAPIServicesSensor(entry, entry.runtime_data.service_coordinator),
         HostAPITasksSensor(entry),
+        HostAPIOsSensor(entry, entry.runtime_data.coordinator),
         HostAPIOsStatusSensor(entry, entry.runtime_data.coordinator),
     ]
     async_add_entities(entities)
