@@ -38,6 +38,11 @@ async def async_setup(hass, config):
     return True
 
 
+async def _async_reload_entry(hass, entry) -> None:
+    """Reload the entry when its data/options/sub-entries change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     """Set up a config entry."""
     client_session = aiohttp.ClientSession()
@@ -49,6 +54,11 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
         await coordinator.async_config_entry_first_refresh()
         await hass.config_entries.async_forward_entry_setups(
             entry, HOST_PLATFORMS)
+        # Command sub-entries added/removed/reconfigured at runtime fire the
+        # entry's update listeners; reload so the button set matches. This is
+        # why host entries use the plain OptionsFlow (no OptionsFlowWithReload).
+        entry.async_on_unload(
+            entry.add_update_listener(_async_reload_entry))
         return True
 
     coordinator = HostAPICoordinator(hass, entry, client_session)

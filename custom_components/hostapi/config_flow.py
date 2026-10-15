@@ -5,8 +5,13 @@ import logging
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import OptionsFlowWithReload
+from homeassistant.config_entries import (
+    ConfigSubentryFlow,
+    OptionsFlow,
+    OptionsFlowWithReload,
+)
 from homeassistant.const import CONF_API_KEY, CONF_HOST, CONF_PORT
+from homeassistant.core import callback
 
 from . import DOMAIN
 
@@ -36,6 +41,13 @@ CONF_BOOT_OS_CMD = "boot_os_cmd"
 CONF_GRUB_ENTRY_WINDOWS = "grub_entry_windows"
 CONF_GRUB_ENTRY_LINUX = "grub_entry_linux"
 CONF_WOL_MAC = "wol_mac"
+
+# Run-command subentries (one button per user-defined command)
+SUBENTRY_TYPE_COMMAND = "command"
+CONF_LABEL = "label"
+CONF_COMMAND = "command"
+CONF_ICON = "icon"
+DEFAULT_COMMAND_ICON = "mdi:console"
 
 KIND_HOSTAPI = "hostapi"
 KIND_HOST = "host"
@@ -326,10 +338,20 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         internal_url = getattr(config, "internal_url", None) if config is not None else None
         return internal_url or DEFAULT_HA_URL
 
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(cls, config_entry):
+        """Only generic SSH hosts support per-host command sub-entries."""
+        if config_entry.data.get(CONF_KIND) == KIND_HOST:
+            return {SUBENTRY_TYPE_COMMAND: HostCommandSubentryFlow}
+        return {}
+
     @staticmethod
     def async_get_options_flow(config_entry):
         """Return the options flow for this config entry."""
-        return HostAPIOptionsFlow(config_entry)
+        if config_entry.data.get(CONF_KIND) == KIND_HOST:
+            return HostOptionsFlow()
+        return HostAPIOptionsFlow()
 
     async def _validate_connection(
         self, host: str, port: int, api_key: str
@@ -389,20 +411,12 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HostAPIOptionsFlow(OptionsFlowWithReload):
-    """Handle options flow for HostAPI."""
-
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
+    """Options flow for a HostAPI instance entry (auto-reloads)."""
 
     async def async_step_init(self, user_input=None):
         """Manage HostAPI options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-
-        if self.config_entry.data.get(CONF_KIND) == KIND_HOST:
-            return await self._async_step_host_options()
-
-        opts = self.config_entry.options
 
         opts = self.config_entry.options
         return self.async_show_form(
@@ -438,7 +452,15 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
             ),
         )
 
-    async def _async_step_host_options(self, user_input=None):
+class HostOptionsFlow(OptionsFlow):
+    """Options flow for a generic SSH host entry.
+
+    Reloads are driven by the entry's update listener (registered in
+    __init__.py), so this must not use OptionsFlowWithReload - Home Assistant
+    rejects that combination.
+    """
+
+    async def async_step_init(self, user_input=None):
         """Options for an SSH host entry: polling + commands + wake."""
         entry = self.config_entry
         if user_input is not None:
@@ -518,3 +540,61 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                 }
             ),
         )
+
+
+class HostCommandSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure one user-defined command on a host."""
+
+    async def async_step_user(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(**self._entry_kwargs(user_input))
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_LABEL): str,
+                    vol.Required(CONF_COMMAND): str,
+                    vol.Optional(
+                        CONF_ICON, default=DEFAULT_COMMAND_ICON): str,
+                }
+            ),
+        )
+
+    async def async_step_reconfigure(self, user_input=None):
+        subentry = self._get_reconfigure_subentry()
+        if user_input is not None:
+            return self.async_update_and_abort(
+                self._get_entry(), subentry,
+                **self._entry_kwargs(user_input))
+
+        data = subentry.data
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_LABEL, default=data.get(CONF_LABEL)): str,
+                    vol.Required(
+                        CONF_COMMAND, default=data.get(CONF_COMMAND)): str,
+                    vol.Optional(
+                        CONF_ICON,
+                        default=data.get(CONF_ICON,
+                                         DEFAULT_COMMAND_ICON)): str,
+                }
+            ),
+        )
+
+    @staticmethod
+    def _entry_kwargs(user_input: dict) -> dict:
+        """Build subentry title/unique_id/data from the flow input."""
+        label = user_input[CONF_LABEL]
+        return {
+            "title": label,
+            "unique_id": label.strip().lower(),
+            "data": {
+                CONF_LABEL: label,
+                CONF_COMMAND: user_input[CONF_COMMAND],
+                CONF_ICON: user_input.get(CONF_ICON) or DEFAULT_COMMAND_ICON,
+            },
+        }

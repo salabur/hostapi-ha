@@ -6,10 +6,12 @@ import aiohttp
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_device_info
 from .button import wol_payload
+from .config_flow import DEFAULT_COMMAND_ICON, SUBENTRY_TYPE_COMMAND
 from .host_coordinator import host_setting
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,6 +147,24 @@ class HostBootOsButton(_HostSSHButton):
         return template.format(entry=entry_name)
 
 
+class HostCommandButton(_HostSSHButton):
+    """User-defined command from a 'command' config sub-entry."""
+
+    def __init__(self, entry, coordinator, subentry):
+        self.subentry = subentry
+        super().__init__(
+            entry,
+            coordinator,
+            subentry.data.get("label") or "Command",
+            f"command_{subentry.subentry_id}",
+            subentry.data.get("icon") or DEFAULT_COMMAND_ICON,
+        )
+
+    @property
+    def _cmd(self) -> str:
+        return self.subentry.data.get("command", "")
+
+
 class HostWakeButton(ButtonEntity):
     """Wake the host: WOL (HA service or raw UDP), automation, OPNsense."""
 
@@ -222,9 +242,34 @@ def _send_udp_wol(mac: str) -> None:
         sock.sendto(payload, ("255.255.255.255", 9))
 
 
+def _prune_stale_command_entities(hass, entry, command_subentries) -> None:
+    """Remove buttons whose command sub-entry was deleted.
+
+    Command buttons are added without ``config_subentry_id`` (so they stay
+    on the host device instead of getting a device of their own), which
+    means Home Assistant does not clean their registry entries up for us
+    when the sub-entry is removed.
+    """
+    desired = {
+        f"{entry.entry_id}_command_{sub.subentry_id}"
+        for sub in command_subentries
+    }
+    prefix = f"{entry.entry_id}_command_"
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(
+            registry, entry.entry_id):
+        if (reg_entry.unique_id.startswith(prefix)
+                and reg_entry.unique_id not in desired):
+            registry.async_remove(reg_entry.entity_id)
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up host entities from a 'host' config entry."""
     coordinator = entry.runtime_data.coordinator
+    command_subentries = [
+        sub for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_TYPE_COMMAND
+    ]
 
     entities = [
         HostAliveBinarySensor(entry, coordinator),
@@ -235,4 +280,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         HostBootOsButton(entry, coordinator, "linux"),
         HostWakeButton(hass, entry),
     ]
+    entities += [HostCommandButton(entry, coordinator, sub)
+                 for sub in command_subentries]
     async_add_entities(entities)
+
+    _prune_stale_command_entities(hass, entry, command_subentries)

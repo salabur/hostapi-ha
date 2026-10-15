@@ -126,6 +126,34 @@
       "switch_pending": { "name": "OS Switch Pending" }
     }
   },
+  "config_subentries": {
+    "command": {
+      "title": "Command",
+      "step": {
+        "user": {
+          "title": "Add command",
+          "description": "A button that runs this command on the host over SSH.",
+          "data": {
+            "label": "Button name",
+            "command": "Command",
+            "icon": "Icon"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit command",
+          "description": "Update this command.",
+          "data": {
+            "label": "Button name",
+            "command": "Command",
+            "icon": "Icon"
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "Command updated"
+      }
+    }
+  },
   "services": {
     "switch_os": {
       "name": "Switch OS",
