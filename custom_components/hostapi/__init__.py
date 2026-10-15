@@ -120,7 +120,7 @@ async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     await entry.runtime_data.coordinator.async_shutdown()
     await entry.runtime_data.client.close()
 
-    return await hass.config_entries.async_unload_entries(
+    return await hass.config_entries.async_unload_platforms(
         entry, platforms
     )
 
