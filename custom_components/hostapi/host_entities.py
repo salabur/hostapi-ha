@@ -2,7 +2,6 @@
 
 import logging
 
-import aiohttp
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.sensor import SensorEntity
@@ -10,7 +9,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_device_info
-from .button import wol_payload
+from .button import async_opnsense_wake, wol_payload
 from .config_flow import DEFAULT_COMMAND_ICON, SUBENTRY_TYPE_COMMAND
 from .host_coordinator import host_setting
 
@@ -184,13 +183,25 @@ class HostWakeButton(ButtonEntity):
     def _mac(self):
         return host_setting(self.entry, "wol_mac")
 
+    def _opnsense(self) -> dict:
+        entry = self.entry
+        return {
+            "base_url": host_setting(entry, "opnsense_url"),
+            "api_key": host_setting(entry, "opnsense_api_key"),
+            "api_secret": host_setting(entry, "opnsense_api_secret"),
+            "interface": host_setting(entry, "opnsense_interface"),
+            "verify_ssl": host_setting(entry, "opnsense_verify_ssl", True),
+        }
+
     @property
     def available(self) -> bool:
-        opts = self.entry.options
+        ops = self._opnsense()
+        opnsense_ready = all(
+            ops[k] for k in ("base_url", "api_key", "api_secret", "interface"))
         return bool(
             self._mac
-            or opts.get("wake_automation")
-            or opts.get("opnsense_wol_url")
+            or self.entry.options.get("wake_automation")
+            or opnsense_ready
         )
 
     async def async_press(self):
@@ -215,22 +226,21 @@ class HostWakeButton(ButtonEntity):
             "host": self.entry.data.get("host"), "mac": mac,
         })
 
-        if opts.get("opnsense_wol_url"):
-            await self._wake_opnsense(opts.get("opnsense_wol_url"), opts, mac)
-
-    async def _wake_opnsense(self, url: str, opts: dict, mac):
-        key = opts.get("opnsense_api_key")
-        secret = opts.get("opnsense_api_secret")
-        auth = aiohttp.BasicAuth(key, secret) if key and secret else None
-        try:
-            async with self.entry.runtime_data.client.post(
-                url,
-                json={"mac": mac, "host": self.entry.data.get("host")},
-                auth=auth,
-            ):
-                pass
-        except Exception as e:
-            _LOGGER.error("Failed to call OPNsense WOL endpoint: %s", e)
+        ops = self._opnsense()
+        if ops["base_url"]:
+            ok, error = await async_opnsense_wake(
+                self.entry.runtime_data.client,
+                base_url=ops["base_url"],
+                api_key=ops["api_key"],
+                api_secret=ops["api_secret"],
+                interface=ops["interface"],
+                mac=mac,
+                verify_ssl=ops["verify_ssl"],
+            )
+            if not ok:
+                _LOGGER.error(
+                    "OPNsense wake failed for %s: %s",
+                    self.entry.data.get("host"), error)
 
 
 def _send_udp_wol(mac: str) -> None:

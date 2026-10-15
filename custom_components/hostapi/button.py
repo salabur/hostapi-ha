@@ -1,5 +1,6 @@
 """Button platform for HostAPI."""
 
+import json
 import logging
 
 import aiohttp
@@ -390,13 +391,59 @@ def _send_udp_wol(mac: str) -> None:
         sock.sendto(payload, ("255.255.255.255", 9))
 
 
+OPNSENSE_WOL_PATH = "/api/wol/wol/set"
+
+
+def opnsense_wol_endpoint(base_url: str) -> str:
+    """Return the os-wol API endpoint for an OPNsense base URL."""
+    base = (base_url or "").strip().rstrip("/")
+    if base.endswith(OPNSENSE_WOL_PATH):
+        return base
+    return base + OPNSENSE_WOL_PATH
+
+
+async def async_opnsense_wake(
+    session, base_url, *, api_key, api_secret, interface, mac, verify_ssl=True
+) -> tuple[bool, str]:
+    """Ask OPNsense's os-wol plugin to send a magic packet.
+
+    Returns ``(ok, error)``. OPNsense answers ``{"status": "OK"}`` on
+    success and an empty array when the interface/MAC pair is rejected, so
+    HTTP 200 alone is not enough.
+    """
+    endpoint = opnsense_wol_endpoint(base_url)
+    payload = {"wake": {"interface": interface, "mac": mac}}
+    auth = aiohttp.BasicAuth(api_key, api_secret)
+    try:
+        async with session.post(
+            endpoint, json=payload, auth=auth, ssl=verify_ssl
+        ) as resp:
+            status = resp.status
+            text = await resp.text()
+    except Exception as e:
+        return False, str(e) or type(e).__name__
+
+    if status != 200:
+        return False, f"OPNsense returned HTTP {status}"
+    try:
+        body = json.loads(text) if text.strip() else {}
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and body.get("status") == "OK":
+        return True, ""
+    return False, (
+        "OPNsense rejected the wake request (check the interface name): "
+        f"{text.strip()[:200] or 'empty response'}"
+    )
+
+
 class HostAPIWakeButton(ButtonEntity):
     """Wake the host via WOL - configurable per entry (options flow):
 
     - native/HA magic packet (default; uses HA's wake_onlan service when
       set up, raw UDP otherwise)
     - user-selectable HA automation (plus the hostapi_wake event)
-    - OPNsense WOL endpoint (generic authenticated POST with mac/host)
+    - OPNsense os-wol plugin (API key/secret + interface name)
     """
 
     def __init__(self, hass, entry):
@@ -417,19 +464,32 @@ class HostAPIWakeButton(ButtonEntity):
         return data.get("mac")
 
     @property
+    def _opnsense(self) -> dict:
+        opts = self.entry.options
+        return {
+            "base_url": opts.get("opnsense_url"),
+            "api_key": opts.get("opnsense_api_key"),
+            "api_secret": opts.get("opnsense_api_secret"),
+            "interface": opts.get("opnsense_interface"),
+            "verify_ssl": opts.get("opnsense_verify_ssl", True),
+        }
+
+    @property
     def available(self) -> bool:
         opts = self.entry.options
+        ops = self._opnsense
+        opnsense_ready = all(
+            ops[k] for k in ("base_url", "api_key", "api_secret", "interface"))
         return bool(
             self._mac
             or opts.get("wake_automation")
-            or opts.get("opnsense_wol_url")
+            or opnsense_ready
         )
 
     async def async_press(self):
         mac = self._mac
         opts = self.entry.options
         automation = opts.get("wake_automation")
-        opnsense_url = opts.get("opnsense_wol_url")
 
         if mac and self.hass.services.has_service("wake_onlan", "send_magic_packet"):
             await self.hass.services.async_call(
@@ -448,21 +508,22 @@ class HostAPIWakeButton(ButtonEntity):
             "host": self.entry.runtime_data.host, "mac": mac,
         })
 
-        if opnsense_url:
-            await self._wake_opnsense(opnsense_url, opts, mac)
+        ops = self._opnsense
+        if ops["base_url"]:
+            ok, error = await async_opnsense_wake(
+                self.session,
+                base_url=ops["base_url"],
+                api_key=ops["api_key"],
+                api_secret=ops["api_secret"],
+                interface=ops["interface"],
+                mac=mac,
+                verify_ssl=ops["verify_ssl"],
+            )
+            if not ok:
+                _LOGGER.error(
+                    "OPNsense wake failed for %s: %s",
+                    self.entry.runtime_data.host, error)
 
-    async def _wake_opnsense(self, url, opts, mac):
-        key = opts.get("opnsense_api_key")
-        secret = opts.get("opnsense_api_secret")
-        auth = aiohttp.BasicAuth(key, secret) if key and secret else None
-        try:
-            async with self.session.post(
-                url, json={"mac": mac, "host": self.entry.runtime_data.host},
-                auth=auth,
-            ):
-                pass
-        except Exception as e:
-            _LOGGER.error("Failed to call OPNsense WOL endpoint: %s", e)
 
     @property
     def session(self):

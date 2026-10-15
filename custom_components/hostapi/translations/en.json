@@ -61,9 +61,11 @@
         "data": {
           "wol_mac": "WOL MAC address",
           "wake_automation": "Automation/script entity to trigger",
-          "opnsense_wol_url": "OPNsense WOL endpoint (POST, authenticated)",
+          "opnsense_url": "OPNsense URL (e.g. https://10.0.0.1)",
           "opnsense_api_key": "OPNsense API key",
-          "opnsense_api_secret": "OPNsense API secret"
+          "opnsense_api_secret": "OPNsense API secret",
+          "opnsense_interface": "OPNsense interface (lan, opt1, ...)",
+          "opnsense_verify_ssl": "Verify OPNsense TLS certificate"
         }
       },
       "reconfigure": {
@@ -100,9 +102,11 @@
           "boot_os_cmd": "Boot-to-OS command ({entry} = grub entry)",
           "wol_mac": "WOL MAC address",
           "wake_automation": "Automation/script entity to trigger",
-          "opnsense_wol_url": "OPNsense WOL endpoint (POST, authenticated)",
+          "opnsense_url": "OPNsense URL (e.g. https://10.0.0.1)",
           "opnsense_api_key": "OPNsense API key",
-          "opnsense_api_secret": "OPNsense API secret"
+          "opnsense_api_secret": "OPNsense API secret",
+          "opnsense_interface": "OPNsense interface (lan, opt1, ...)",
+          "opnsense_verify_ssl": "Verify OPNsense TLS certificate"
         }
       }
     }

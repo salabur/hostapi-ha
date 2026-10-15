@@ -20,9 +20,11 @@ _LOGGER = logging.getLogger(__name__)
 CONF_WAKE_ENTITY = "wake_entity"
 CONF_HA_URL = "ha_url"
 CONF_WAKE_AUTOMATION = "wake_automation"
-CONF_OPNSENSE_WOL_URL = "opnsense_wol_url"
+CONF_OPNSENSE_URL = "opnsense_url"
 CONF_OPNSENSE_API_KEY = "opnsense_api_key"
 CONF_OPNSENSE_API_SECRET = "opnsense_api_secret"
+CONF_OPNSENSE_INTERFACE = "opnsense_interface"
+CONF_OPNSENSE_VERIFY_SSL = "opnsense_verify_ssl"
 
 # Host (generic SSH machine) config keys
 CONF_KIND = "kind"
@@ -225,9 +227,16 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_WAKE_AUTOMATION,
                         description="HA automation/script entity to trigger",
                         default=""): str,
-                    vol.Optional(CONF_OPNSENSE_WOL_URL, default=""): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_URL, default="",
+                        description="OPNsense URL, e.g. https://10.0.0.1"): str,
                     vol.Optional(CONF_OPNSENSE_API_KEY, default=""): str,
                     vol.Optional(CONF_OPNSENSE_API_SECRET, default=""): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_INTERFACE, default="",
+                        description="OPNsense interface (lan, opt1, ...)"): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_VERIFY_SSL, default=True): bool,
                 }
             ),
         )
@@ -436,9 +445,9 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
                     ): str,
                     vol.Optional(
-                        CONF_OPNSENSE_WOL_URL,
-                        description="OPNsense WOL endpoint (POST, authenticated)",
-                        default=opts.get(CONF_OPNSENSE_WOL_URL, ""),
+                        CONF_OPNSENSE_URL,
+                        description="OPNsense URL, e.g. https://10.0.0.1",
+                        default=opts.get(CONF_OPNSENSE_URL, ""),
                     ): str,
                     vol.Optional(
                         CONF_OPNSENSE_API_KEY,
@@ -448,6 +457,15 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                         CONF_OPNSENSE_API_SECRET,
                         default=opts.get(CONF_OPNSENSE_API_SECRET, ""),
                     ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_INTERFACE,
+                        description="OPNsense interface (lan, opt1, ...)",
+                        default=opts.get(CONF_OPNSENSE_INTERFACE, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_VERIFY_SSL,
+                        default=opts.get(CONF_OPNSENSE_VERIFY_SSL, True),
+                    ): bool,
                 }
             ),
         )
@@ -526,8 +544,8 @@ class HostOptionsFlow(OptionsFlow):
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
                     ): str,
                     vol.Optional(
-                        CONF_OPNSENSE_WOL_URL,
-                        default=opts.get(CONF_OPNSENSE_WOL_URL, ""),
+                        CONF_OPNSENSE_URL,
+                        default=opts.get(CONF_OPNSENSE_URL, ""),
                     ): str,
                     vol.Optional(
                         CONF_OPNSENSE_API_KEY,
@@ -537,6 +555,14 @@ class HostOptionsFlow(OptionsFlow):
                         CONF_OPNSENSE_API_SECRET,
                         default=opts.get(CONF_OPNSENSE_API_SECRET, ""),
                     ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_INTERFACE,
+                        default=opts.get(CONF_OPNSENSE_INTERFACE, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_VERIFY_SSL,
+                        default=opts.get(CONF_OPNSENSE_VERIFY_SSL, True),
+                    ): bool,
                 }
             ),
         )
