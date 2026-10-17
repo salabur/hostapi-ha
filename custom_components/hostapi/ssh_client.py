@@ -126,12 +126,16 @@ class SSHClient:
         try:
             conn = await asyncio.wait_for(
                 asyncssh.connect(**self._connect_kwargs()), timeout)
-            await conn.close()
-            return ProbeResult(ok=True)
         except asyncio.TimeoutError:
             return ProbeResult(ok=False, error="SSH connection timed out")
         except Exception as e:
             return ProbeResult(ok=False, error=str(e) or type(e).__name__)
+
+        # asyncssh's SSHConnection.close() is synchronous (only wait_closed()
+        # is a coroutine) - awaiting it raised "'NoneType' object can't be
+        # awaited" and turned every validation into cannot_connect.
+        conn.close()
+        return ProbeResult(ok=True)
 
     async def run(self, command: str,
                   timeout: float = COMMAND_TIMEOUT) -> SSHResult:

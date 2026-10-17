@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "HostAPI",
-        "description": "Add a device: a HostAPI instance or a generic SSH host.",
+        "description": "Add a device: a HostAPI instance, a generic SSH host, or global OPNsense settings.",
         "data": {
           "kind": "Device type"
         },
@@ -60,12 +60,19 @@
         "description": "How to wake the host.",
         "data": {
           "wol_mac": "WOL MAC address",
-          "wake_automation": "Automation/script entity to trigger",
-          "opnsense_url": "OPNsense URL (e.g. https://10.0.0.1)",
-          "opnsense_api_key": "OPNsense API key",
-          "opnsense_api_secret": "OPNsense API secret",
-          "opnsense_interface": "OPNsense interface (lan, opt1, ...)",
-          "opnsense_verify_ssl": "Verify OPNsense TLS certificate"
+          "wake_automation": "Automation/script to trigger on Wake",
+          "opnsense_interface": "OPNsense interface (lan, opt1, ...)"
+        }
+      },
+      "opnsense_connection": {
+        "title": "OPNsense (global Wake-on-LAN)",
+        "description": "One set of OPNsense settings shared by every host. Hosts only pick their interface.",
+        "data": {
+          "opnsense_url": "OPNsense URL",
+          "opnsense_api_key": "API key",
+          "opnsense_api_secret": "API secret",
+          "opnsense_interface": "Default interface (lan, opt1, ...)",
+          "opnsense_verify_ssl": "Verify TLS certificate"
         }
       },
       "reconfigure": {
@@ -101,12 +108,19 @@
           "shutdown_cmd": "Shutdown command",
           "boot_os_cmd": "Boot-to-OS command ({entry} = grub entry)",
           "wol_mac": "WOL MAC address",
-          "wake_automation": "Automation/script entity to trigger",
-          "opnsense_url": "OPNsense URL (e.g. https://10.0.0.1)",
-          "opnsense_api_key": "OPNsense API key",
-          "opnsense_api_secret": "OPNsense API secret",
-          "opnsense_interface": "OPNsense interface (lan, opt1, ...)",
-          "opnsense_verify_ssl": "Verify OPNsense TLS certificate"
+          "wake_automation": "Automation/script to trigger on Wake",
+          "opnsense_interface": "OPNsense interface (lan, opt1, ...)"
+        }
+      },
+      "opnsense_options": {
+        "title": "OPNsense options",
+        "description": "Global OPNsense Wake-on-LAN settings.",
+        "data": {
+          "opnsense_url": "OPNsense URL",
+          "opnsense_api_key": "API key",
+          "opnsense_api_secret": "API secret",
+          "opnsense_interface": "Default interface (lan, opt1, ...)",
+          "opnsense_verify_ssl": "Verify TLS certificate"
         }
       }
     }

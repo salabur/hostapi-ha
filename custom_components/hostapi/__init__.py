@@ -1,6 +1,7 @@
 """HostAPI custom component for Home Assistant."""
 
 import logging
+from dataclasses import dataclass
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -15,6 +16,34 @@ _LOGGER = logging.getLogger(__name__)
 
 KIND_HOSTAPI = "hostapi"
 KIND_HOST = "host"
+KIND_OPNSENSE = "opnsense"
+
+
+@dataclass
+class OpnsenseData:
+    """Global OPNsense Wake-on-LAN settings."""
+
+    url: str = ""
+    api_key: str = ""
+    api_secret: str = ""
+    interface: str = ""
+    verify_ssl: bool = True
+
+
+def async_get_opnsense_config(hass: HomeAssistant) -> OpnsenseData | None:
+    """Return the global OPNsense config, if a kind=opnsense entry exists."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get("kind") != KIND_OPNSENSE:
+            continue
+        merged = {**entry.data, **entry.options}
+        return OpnsenseData(
+            url=merged.get("opnsense_url", ""),
+            api_key=merged.get("opnsense_api_key", ""),
+            api_secret=merged.get("opnsense_api_secret", ""),
+            interface=merged.get("opnsense_interface", ""),
+            verify_ssl=merged.get("opnsense_verify_ssl", True),
+        )
+    return None
 
 
 def get_device_info(entry) -> dict:
@@ -45,6 +74,12 @@ async def _async_reload_entry(hass, entry) -> None:
 
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     """Set up a config entry."""
+    if entry.data.get("kind") == KIND_OPNSENSE:
+        # Config-only entry: it stores the global OPNsense settings that the
+        # wake buttons of every host read; no entities, no platforms.
+        entry.runtime_data = async_get_opnsense_config(hass) or OpnsenseData()
+        return True
+
     client_session = aiohttp.ClientSession()
 
     if entry.data.get("kind") == KIND_HOST:
@@ -122,6 +157,8 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     """Unload a config entry."""
+    if entry.data.get("kind") == KIND_OPNSENSE:
+        return True
     platforms = (HOST_PLATFORMS
                  if entry.data.get("kind") == KIND_HOST else PLATFORMS)
     listener = getattr(entry.runtime_data, "ws_listener", None)

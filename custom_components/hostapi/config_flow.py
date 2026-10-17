@@ -12,6 +12,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_API_KEY, CONF_HOST, CONF_PORT
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 from . import DOMAIN
 
@@ -53,6 +54,12 @@ DEFAULT_COMMAND_ICON = "mdi:console"
 
 KIND_HOSTAPI = "hostapi"
 KIND_HOST = "host"
+KIND_OPNSENSE = "opnsense"
+
+# Searchable picker over the entities the wake button can trigger
+WAKE_AUTOMATION_SELECTOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(domain=["automation", "script"])
+)
 
 DEFAULT_WAKE_ENTITY = "switch.hal_switch_template"
 DEFAULT_HA_URL = "http://homeassistant.local:8123"
@@ -81,7 +88,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host_data = {}
 
     async def async_step_user(self, user_input=None):
-        """Entry point: choose between a hostapi instance and an SSH host."""
+        """Entry point: choose what kind of device to add."""
         errors = {}
 
         if user_input is not None:
@@ -89,17 +96,68 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if kind == KIND_HOST:
                 self._host_data = {}
                 return await self.async_step_host_connection()
+            if kind == KIND_OPNSENSE:
+                return await self.async_step_opnsense_connection()
             return await self.async_step_hostapi_connection()
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_KIND, default=KIND_HOSTAPI): vol.In(
-                        {KIND_HOSTAPI: "HostAPI instance (REST API)",
-                         KIND_HOST: "Generic host (SSH)"}
-                    ),
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_KIND, default=KIND_HOSTAPI): vol.In(
+                            {KIND_HOSTAPI: "HostAPI instance (REST API)",
+                             KIND_HOST: "Generic host (SSH)",
+                             KIND_OPNSENSE:
+                                 "OPNsense (global Wake-on-LAN)"}
+                        ),
+                    }
+                ),
+                user_input,
+            ),
+            errors=errors,
+        )
+
+    async def async_step_opnsense_connection(self, user_input=None):
+        """Global OPNsense settings shared by all hosts."""
+        errors = {}
+
+        if user_input is not None:
+            await self.async_set_unique_id(KIND_OPNSENSE)
+            self._abort_if_unique_id_configured()
+            data = {
+                CONF_KIND: KIND_OPNSENSE,
+                CONF_OPNSENSE_URL: user_input.get(CONF_OPNSENSE_URL, ""),
+                CONF_OPNSENSE_API_KEY: user_input.get(
+                    CONF_OPNSENSE_API_KEY, ""),
+                CONF_OPNSENSE_API_SECRET: user_input.get(
+                    CONF_OPNSENSE_API_SECRET, ""),
+                CONF_OPNSENSE_INTERFACE: user_input.get(
+                    CONF_OPNSENSE_INTERFACE, ""),
+                CONF_OPNSENSE_VERIFY_SSL: user_input.get(
+                    CONF_OPNSENSE_VERIFY_SSL, True),
+            }
+            return self.async_create_entry(title="OPNsense", data=data)
+
+        return self.async_show_form(
+            step_id="opnsense_connection",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_OPNSENSE_URL,
+                                     description="OPNsense URL, e.g."
+                                                 " https://10.0.0.1"): str,
+                        vol.Required(CONF_OPNSENSE_API_KEY): str,
+                        vol.Required(CONF_OPNSENSE_API_SECRET): str,
+                        vol.Optional(
+                            CONF_OPNSENSE_INTERFACE, default="",
+                            description="OPNsense interface (lan, opt1, ...)"
+                        ): str,
+                        vol.Optional(
+                            CONF_OPNSENSE_VERIFY_SSL, default=True): bool,
+                    }
+                ),
+                user_input,
             ),
             errors=errors,
         )
@@ -141,18 +199,23 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="host_connection",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_NAME): str,
-                    vol.Required(CONF_HOST): str,
-                    vol.Required(CONF_SSH_PORT, default=DEFAULT_SSH_PORT): int,
-                    vol.Required(CONF_SSH_USER, default=DEFAULT_SSH_USER): str,
-                    vol.Optional(CONF_SSH_PASSWORD): str,
-                    vol.Optional(
-                        CONF_SSH_KEY,
-                        description="Private key content or path",
-                    ): str,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_NAME): str,
+                        vol.Required(CONF_HOST): str,
+                        vol.Required(
+                            CONF_SSH_PORT, default=DEFAULT_SSH_PORT): int,
+                        vol.Required(
+                            CONF_SSH_USER, default=DEFAULT_SSH_USER): str,
+                        vol.Optional(CONF_SSH_PASSWORD): str,
+                        vol.Optional(
+                            CONF_SSH_KEY,
+                            description="Private key content or path",
+                        ): str,
+                    }
+                ),
+                user_input,
             ),
             errors=errors,
         )
@@ -219,25 +282,24 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="host_wake",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_WOL_MAC, description="WOL MAC address",
-                                 default=""): str,
-                    vol.Optional(
-                        CONF_WAKE_AUTOMATION,
-                        description="HA automation/script entity to trigger",
-                        default=""): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_URL, default="",
-                        description="OPNsense URL, e.g. https://10.0.0.1"): str,
-                    vol.Optional(CONF_OPNSENSE_API_KEY, default=""): str,
-                    vol.Optional(CONF_OPNSENSE_API_SECRET, default=""): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_INTERFACE, default="",
-                        description="OPNsense interface (lan, opt1, ...)"): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_VERIFY_SSL, default=True): bool,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_WOL_MAC, description="WOL MAC address",
+                            default=""): str,
+                        vol.Optional(
+                            CONF_WAKE_AUTOMATION,
+                            description="Automation/script to trigger on Wake",
+                            default="",
+                        ): WAKE_AUTOMATION_SELECTOR,
+                        vol.Optional(
+                            CONF_OPNSENSE_INTERFACE, default="",
+                            description="OPNsense interface (lan, opt1, ...)"
+                        ): str,
+                    }
+                ),
+                user_input,
             ),
         )
 
@@ -279,20 +341,23 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="hostapi_connection",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST): str,
-                    vol.Optional(CONF_PORT, default=8080): int,
-                    vol.Required(CONF_API_KEY): str,
-                    vol.Optional(
-                        CONF_WAKE_ENTITY,
-                        default=DEFAULT_WAKE_ENTITY,
-                    ): str,
-                    vol.Optional(
-                        CONF_HA_URL,
-                        default=self._default_ha_url(),
-                    ): str,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_HOST): str,
+                        vol.Optional(CONF_PORT, default=8080): int,
+                        vol.Required(CONF_API_KEY): str,
+                        vol.Optional(
+                            CONF_WAKE_ENTITY,
+                            default=DEFAULT_WAKE_ENTITY,
+                        ): str,
+                        vol.Optional(
+                            CONF_HA_URL,
+                            default=self._default_ha_url(),
+                        ): str,
+                    }
+                ),
+                user_input,
             ),
             errors=errors,
         )
@@ -356,10 +421,14 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return {}
 
     @staticmethod
+    @callback
     def async_get_options_flow(config_entry):
         """Return the options flow for this config entry."""
-        if config_entry.data.get(CONF_KIND) == KIND_HOST:
+        kind = config_entry.data.get(CONF_KIND)
+        if kind == KIND_HOST:
             return HostOptionsFlow()
+        if kind == KIND_OPNSENSE:
+            return OpnsenseOptionsFlow()
         return HostAPIOptionsFlow()
 
     async def _validate_connection(
@@ -395,25 +464,28 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="host_connection",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_NAME,
-                        default=entry.data.get(CONF_NAME)): str,
-                    vol.Required(
-                        CONF_HOST,
-                        default=entry.data.get(CONF_HOST)): str,
-                    vol.Required(
-                        CONF_SSH_PORT,
-                        default=entry.data.get(
-                            CONF_SSH_PORT, DEFAULT_SSH_PORT)): int,
-                    vol.Required(
-                        CONF_SSH_USER,
-                        default=entry.data.get(
-                            CONF_SSH_USER, DEFAULT_SSH_USER)): str,
-                    vol.Optional(CONF_SSH_PASSWORD): str,
-                    vol.Optional(CONF_SSH_KEY): str,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_NAME,
+                            default=entry.data.get(CONF_NAME)): str,
+                        vol.Required(
+                            CONF_HOST,
+                            default=entry.data.get(CONF_HOST)): str,
+                        vol.Required(
+                            CONF_SSH_PORT,
+                            default=entry.data.get(
+                                CONF_SSH_PORT, DEFAULT_SSH_PORT)): int,
+                        vol.Required(
+                            CONF_SSH_USER,
+                            default=entry.data.get(
+                                CONF_SSH_USER, DEFAULT_SSH_USER)): str,
+                        vol.Optional(CONF_SSH_PASSWORD): str,
+                        vol.Optional(CONF_SSH_KEY): str,
+                    }
+                ),
+                user_input,
             ),
             errors=errors,
         )
@@ -441,34 +513,76 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                     ): str,
                     vol.Optional(
                         CONF_WAKE_AUTOMATION,
-                        description="HA automation/script entity to trigger on Wake",
+                        description="Automation/script to trigger on Wake",
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_URL,
-                        description="OPNsense URL, e.g. https://10.0.0.1",
-                        default=opts.get(CONF_OPNSENSE_URL, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_API_KEY,
-                        default=opts.get(CONF_OPNSENSE_API_KEY, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_API_SECRET,
-                        default=opts.get(CONF_OPNSENSE_API_SECRET, ""),
-                    ): str,
+                    ): WAKE_AUTOMATION_SELECTOR,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
                         description="OPNsense interface (lan, opt1, ...)",
                         default=opts.get(CONF_OPNSENSE_INTERFACE, ""),
                     ): str,
+                }
+            ),
+        )
+
+
+class OpnsenseOptionsFlow(OptionsFlowWithReload):
+    """Options flow for the global OPNsense entry (auto-reloads)."""
+
+    async def async_step_init(self, user_input=None):
+        """Manage global OPNsense options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        opts = self.config_entry.options
+        return self.async_show_form(
+            step_id="opnsense_options",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_OPNSENSE_URL,
+                        description="OPNsense URL, e.g. https://10.0.0.1",
+                        default=opts.get(
+                            CONF_OPNSENSE_URL,
+                            self.config_entry.data.get(CONF_OPNSENSE_URL, ""),
+                        ),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_API_KEY,
+                        default=opts.get(
+                            CONF_OPNSENSE_API_KEY,
+                            self.config_entry.data.get(CONF_OPNSENSE_API_KEY, ""),
+                        ),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_API_SECRET,
+                        default=opts.get(
+                            CONF_OPNSENSE_API_SECRET,
+                            self.config_entry.data.get(
+                                CONF_OPNSENSE_API_SECRET, ""),
+                        ),
+                    ): str,
+                    vol.Optional(
+                        CONF_OPNSENSE_INTERFACE,
+                        description="OPNsense interface (lan, opt1, ...)",
+                        default=opts.get(
+                            CONF_OPNSENSE_INTERFACE,
+                            self.config_entry.data.get(
+                                CONF_OPNSENSE_INTERFACE, ""),
+                        ),
+                    ): str,
                     vol.Optional(
                         CONF_OPNSENSE_VERIFY_SSL,
-                        default=opts.get(CONF_OPNSENSE_VERIFY_SSL, True),
+                        default=opts.get(
+                            CONF_OPNSENSE_VERIFY_SSL,
+                            self.config_entry.data.get(
+                                CONF_OPNSENSE_VERIFY_SSL, True),
+                        ),
                     ): bool,
                 }
             ),
         )
+
 
 class HostOptionsFlow(OptionsFlow):
     """Options flow for a generic SSH host entry.
@@ -542,27 +656,12 @@ class HostOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_WAKE_AUTOMATION,
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_URL,
-                        default=opts.get(CONF_OPNSENSE_URL, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_API_KEY,
-                        default=opts.get(CONF_OPNSENSE_API_KEY, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_API_SECRET,
-                        default=opts.get(CONF_OPNSENSE_API_SECRET, ""),
-                    ): str,
+                    ): WAKE_AUTOMATION_SELECTOR,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
+                        description="OPNsense interface (lan, opt1, ...)",
                         default=opts.get(CONF_OPNSENSE_INTERFACE, ""),
                     ): str,
-                    vol.Optional(
-                        CONF_OPNSENSE_VERIFY_SSL,
-                        default=opts.get(CONF_OPNSENSE_VERIFY_SSL, True),
-                    ): bool,
                 }
             ),
         )
@@ -577,13 +676,16 @@ class HostCommandSubentryFlow(ConfigSubentryFlow):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LABEL): str,
-                    vol.Required(CONF_COMMAND): str,
-                    vol.Optional(
-                        CONF_ICON, default=DEFAULT_COMMAND_ICON): str,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_LABEL): str,
+                        vol.Required(CONF_COMMAND): str,
+                        vol.Optional(
+                            CONF_ICON, default=DEFAULT_COMMAND_ICON): str,
+                    }
+                ),
+                user_input,
             ),
         )
 
@@ -597,17 +699,21 @@ class HostCommandSubentryFlow(ConfigSubentryFlow):
         data = subentry.data
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_LABEL, default=data.get(CONF_LABEL)): str,
-                    vol.Required(
-                        CONF_COMMAND, default=data.get(CONF_COMMAND)): str,
-                    vol.Optional(
-                        CONF_ICON,
-                        default=data.get(CONF_ICON,
-                                         DEFAULT_COMMAND_ICON)): str,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_LABEL, default=data.get(CONF_LABEL)): str,
+                        vol.Required(
+                            CONF_COMMAND,
+                            default=data.get(CONF_COMMAND)): str,
+                        vol.Optional(
+                            CONF_ICON,
+                            default=data.get(CONF_ICON,
+                                             DEFAULT_COMMAND_ICON)): str,
+                    }
+                ),
+                user_input,
             ),
         )
 

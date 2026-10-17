@@ -8,8 +8,8 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import get_device_info
-from .button import async_opnsense_wake, wol_payload
+from . import async_get_opnsense_config, get_device_info
+from .button import async_opnsense_wake, trigger_service, wol_payload
 from .config_flow import DEFAULT_COMMAND_ICON, SUBENTRY_TYPE_COMMAND
 from .host_coordinator import host_setting
 
@@ -183,25 +183,31 @@ class HostWakeButton(ButtonEntity):
     def _mac(self):
         return host_setting(self.entry, "wol_mac")
 
-    def _opnsense(self) -> dict:
-        entry = self.entry
+    def _opnsense(self) -> dict | None:
+        """Global OPNsense settings, resolved with this host's interface."""
+        global_cfg = async_get_opnsense_config(self.hass)
+        if global_cfg is None:
+            return None
+        interface = (host_setting(self.entry, "opnsense_interface")
+                     or global_cfg.interface)
+        if not all([global_cfg.url, global_cfg.api_key,
+                    global_cfg.api_secret, interface]):
+            return None
         return {
-            "base_url": host_setting(entry, "opnsense_url"),
-            "api_key": host_setting(entry, "opnsense_api_key"),
-            "api_secret": host_setting(entry, "opnsense_api_secret"),
-            "interface": host_setting(entry, "opnsense_interface"),
-            "verify_ssl": host_setting(entry, "opnsense_verify_ssl", True),
+            "base_url": global_cfg.url,
+            "api_key": global_cfg.api_key,
+            "api_secret": global_cfg.api_secret,
+            "interface": interface,
+            "verify_ssl": global_cfg.verify_ssl,
         }
 
     @property
     def available(self) -> bool:
-        ops = self._opnsense()
-        opnsense_ready = all(
-            ops[k] for k in ("base_url", "api_key", "api_secret", "interface"))
+        opts = self.entry.options
         return bool(
             self._mac
-            or self.entry.options.get("wake_automation")
-            or opnsense_ready
+            or opts.get("wake_automation")
+            or self._opnsense()
         )
 
     async def async_press(self):
@@ -218,8 +224,9 @@ class HostWakeButton(ButtonEntity):
 
         automation = opts.get("wake_automation")
         if automation:
+            domain, service = trigger_service(automation)
             await self.hass.services.async_call(
-                "automation", "trigger", {"entity_id": automation},
+                domain, service, {"entity_id": automation},
                 blocking=False)
 
         self.hass.bus.async_fire("hostapi_wake", {
@@ -227,7 +234,7 @@ class HostWakeButton(ButtonEntity):
         })
 
         ops = self._opnsense()
-        if ops["base_url"]:
+        if ops:
             ok, error = await async_opnsense_wake(
                 self.entry.runtime_data.client,
                 base_url=ops["base_url"],
