@@ -8,6 +8,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers import entity_registry as er
 
 from . import async_get_opnsense_config, get_device_info
+from .ssh_client import REASON_CANNOT_CONNECT, REASON_INVALID_AUTH
 
 CONF_API_VERSION = "/api/v1"
 
@@ -392,6 +393,7 @@ def _send_udp_wol(mac: str) -> None:
 
 
 OPNSENSE_WOL_PATH = "/api/wol/wol/set"
+OPNSENSE_WOL_SEARCH_PATH = "/api/wol/wol/searchHost"
 
 
 def trigger_service(entity_id: str) -> tuple[str, str]:
@@ -402,12 +404,46 @@ def trigger_service(entity_id: str) -> tuple[str, str]:
     return "automation", "trigger"
 
 
-def opnsense_wol_endpoint(base_url: str) -> str:
-    """Return the os-wol API endpoint for an OPNsense base URL."""
+def opnsense_api_endpoint(base_url: str, path: str) -> str:
+    """Return an os-wol API endpoint for an OPNsense base URL."""
     base = (base_url or "").strip().rstrip("/")
-    if base.endswith(OPNSENSE_WOL_PATH):
+    if base.endswith(path):
         return base
-    return base + OPNSENSE_WOL_PATH
+    return base + path
+
+
+def opnsense_wol_endpoint(base_url: str) -> str:
+    """Return the os-wol wake endpoint for an OPNsense base URL."""
+    return opnsense_api_endpoint(base_url, OPNSENSE_WOL_PATH)
+
+
+async def async_validate_opnsense(
+    session, base_url, api_key, api_secret, verify_ssl=True
+) -> tuple[bool, str | None]:
+    """Probe the os-wol endpoint to verify URL + credentials on save.
+
+    A read-only ``GET /api/wol/wol/searchHost`` catches typos in the
+    key/secret (401/403) and a missing plugin (404) before the entry is
+    created instead of on the first Wake press. Returns ``(ok, reason)``
+    with the same reason vocabulary as the SSH flow.
+    """
+    endpoint = opnsense_api_endpoint(base_url, OPNSENSE_WOL_SEARCH_PATH)
+    auth = aiohttp.BasicAuth(api_key, api_secret)
+    try:
+        async with session.get(endpoint, auth=auth, ssl=verify_ssl) as resp:
+            status = resp.status
+    except Exception:
+        return False, REASON_CANNOT_CONNECT
+
+    if status in (401, 403):
+        return False, REASON_INVALID_AUTH
+    if status == 404:
+        # OPNsense redirects unknown API paths to the login page in some
+        # setups, so also treat a redirect-to-login as "plugin missing".
+        return False, "opnsense_wol_missing"
+    if status != 200:
+        return False, REASON_CANNOT_CONNECT
+    return True, None
 
 
 async def async_opnsense_wake(

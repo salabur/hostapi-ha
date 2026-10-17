@@ -21,6 +21,14 @@ CONNECT_TIMEOUT = 10
 COMMAND_TIMEOUT = 60
 PROBE_TIMEOUT = 5
 
+# Machine-readable failure reasons: the config flow maps these to
+# errors["base"] so the user sees *why* validation failed instead of a
+# generic cannot_connect for every case.
+REASON_CANNOT_CONNECT = "cannot_connect"
+REASON_INVALID_AUTH = "invalid_auth"
+REASON_MISSING_DEP = "missing_dependency"
+REASON_TIMEOUT = "timeout"
+
 
 @dataclass
 class SSHResult:
@@ -31,6 +39,7 @@ class SSHResult:
     stdout: str = ""
     stderr: str = ""
     error: str | None = None
+    reason: str | None = None
 
 
 @dataclass
@@ -39,6 +48,7 @@ class ProbeResult:
 
     ok: bool
     error: str | None = None
+    reason: str | None = None
 
 
 class SSHClient:
@@ -69,8 +79,14 @@ class SSHClient:
             )
             writer.close()
             return ProbeResult(ok=True)
-        except (OSError, asyncio.TimeoutError) as e:
-            return ProbeResult(ok=False, error=str(e) or type(e).__name__)
+        except asyncio.TimeoutError as e:
+            return ProbeResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_TIMEOUT)
+        except OSError as e:
+            return ProbeResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_CANNOT_CONNECT)
 
     async def icmp_ping(self, timeout: float = PROBE_TIMEOUT) -> ProbeResult:
         """Unprivileged ping via the system ping binary."""
@@ -122,14 +138,24 @@ class SSHClient:
         try:
             import asyncssh  # noqa: F401
         except ImportError:
-            return ProbeResult(ok=False, error="asyncssh not installed")
+            return ProbeResult(
+                ok=False, error="asyncssh not installed",
+                reason=REASON_MISSING_DEP)
         try:
             conn = await asyncio.wait_for(
                 asyncssh.connect(**self._connect_kwargs()), timeout)
         except asyncio.TimeoutError:
-            return ProbeResult(ok=False, error="SSH connection timed out")
+            return ProbeResult(
+                ok=False, error="SSH connection timed out",
+                reason=REASON_TIMEOUT)
+        except asyncssh.PermissionDenied as e:
+            return ProbeResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_INVALID_AUTH)
         except Exception as e:
-            return ProbeResult(ok=False, error=str(e) or type(e).__name__)
+            return ProbeResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_CANNOT_CONNECT)
 
         # asyncssh's SSHConnection.close() is synchronous (only wait_closed()
         # is a coroutine) - awaiting it raised "'NoneType' object can't be
@@ -143,7 +169,9 @@ class SSHClient:
         try:
             import asyncssh  # noqa: F401
         except ImportError:
-            return SSHResult(ok=False, error="asyncssh not installed")
+            return SSHResult(
+                ok=False, error="asyncssh not installed",
+                reason=REASON_MISSING_DEP)
         try:
             async with asyncssh.connect(**self._connect_kwargs()) as conn:
                 result = await asyncio.wait_for(conn.run(command), timeout)
@@ -160,6 +188,14 @@ class SSHClient:
                     + (f": {stderr.strip()}" if stderr.strip() else ""),
                 )
         except asyncio.TimeoutError:
-            return SSHResult(ok=False, error=f"command timed out ({timeout}s)")
+            return SSHResult(
+                ok=False, error=f"command timed out ({timeout}s)",
+                reason=REASON_TIMEOUT)
+        except asyncssh.PermissionDenied as e:
+            return SSHResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_INVALID_AUTH)
         except Exception as e:
-            return SSHResult(ok=False, error=str(e) or type(e).__name__)
+            return SSHResult(
+                ok=False, error=str(e) or type(e).__name__,
+                reason=REASON_CANNOT_CONNECT)

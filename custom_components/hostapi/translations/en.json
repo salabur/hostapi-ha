@@ -19,7 +19,10 @@
           "wake_entity": "Wake entity (WOL)",
           "ha_url": "Home Assistant URL"
         },
-        "error": { "cannot_connect": "Cannot connect" }
+        "error": {
+          "cannot_connect": "Cannot connect",
+          "invalid_auth": "Invalid credentials"
+        }
       },
       "host_connection": {
         "title": "Generic host (SSH)",
@@ -32,7 +35,12 @@
           "ssh_password": "SSH password (optional)",
           "ssh_key": "SSH private key content or path (optional)"
         },
-        "error": { "cannot_connect": "Cannot connect" }
+        "error": {
+          "cannot_connect": "Cannot connect",
+          "invalid_auth": "Authentication failed - check user, password and key",
+          "missing_dependency": "The asyncssh requirement is missing - restart Home Assistant so it gets installed",
+          "timeout": "Connection timed out"
+        }
       },
       "host_alive": {
         "title": "Alive check",
@@ -73,6 +81,11 @@
           "opnsense_api_secret": "API secret",
           "opnsense_interface": "Default interface (lan, opt1, ...)",
           "opnsense_verify_ssl": "Verify TLS certificate"
+        },
+        "error": {
+          "cannot_connect": "Cannot connect",
+          "invalid_auth": "Invalid API key or secret",
+          "opnsense_wol_missing": "The Wake-on-LAN plugin (os-wol) is not installed on this OPNsense"
         }
       },
       "reconfigure": {
@@ -83,6 +96,10 @@
           "api_key": "API Token",
           "wake_entity": "Wake entity (WOL)",
           "ha_url": "Home Assistant URL"
+        },
+        "error": {
+          "cannot_connect": "Cannot connect",
+          "invalid_auth": "Invalid credentials"
         }
       }
     }
@@ -121,6 +138,11 @@
           "opnsense_api_secret": "API secret",
           "opnsense_interface": "Default interface (lan, opt1, ...)",
           "opnsense_verify_ssl": "Verify TLS certificate"
+        },
+        "error": {
+          "cannot_connect": "Cannot connect",
+          "invalid_auth": "Invalid API key or secret",
+          "opnsense_wol_missing": "The Wake-on-LAN plugin (os-wol) is not installed on this OPNsense"
         }
       }
     }

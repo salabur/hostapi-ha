@@ -137,7 +137,11 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_OPNSENSE_VERIFY_SSL: user_input.get(
                     CONF_OPNSENSE_VERIFY_SSL, True),
             }
-            return self.async_create_entry(title="OPNsense", data=data)
+            ok, reason = await self._validate_opnsense(data)
+            if not ok:
+                errors["base"] = reason or "cannot_connect"
+            else:
+                return self.async_create_entry(title="OPNsense", data=data)
 
         return self.async_show_form(
             step_id="opnsense_connection",
@@ -175,7 +179,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(f"hostapi_host_{host}")
             self._abort_if_unique_id_configured()
 
-            ok, error = await self._validate_ssh(
+            ok, error, reason = await self._validate_ssh(
                 host, ssh_port,
                 user_input.get(CONF_SSH_USER, DEFAULT_SSH_USER),
                 user_input.get(CONF_SSH_PASSWORD),
@@ -195,7 +199,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_host_alive()
             _LOGGER.warning(
                 "Host %s validation failed: %s", host, error)
-            errors["base"] = "cannot_connect"
+            errors["base"] = reason or "cannot_connect"
 
         return self.async_show_form(
             step_id="host_connection",
@@ -303,19 +307,37 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def _validate_opnsense(self, data):
+        """Probe the OPNsense os-wol API; returns (ok, reason)."""
+        from .button import async_validate_opnsense
+        from .ssh_client import REASON_CANNOT_CONNECT
+
+        async with aiohttp.ClientSession() as session:
+            ok, reason = await async_validate_opnsense(
+                session,
+                data.get(CONF_OPNSENSE_URL, ""),
+                data.get(CONF_OPNSENSE_API_KEY, ""),
+                data.get(CONF_OPNSENSE_API_SECRET, ""),
+                verify_ssl=data.get(CONF_OPNSENSE_VERIFY_SSL, True),
+            )
+        if not ok and not reason:
+            return False, REASON_CANNOT_CONNECT
+        return ok, reason
+
     @staticmethod
     async def _validate_ssh(host, port, user, password, key):
+        """Validate reachability + credentials; returns (ok, error, reason)."""
         from .ssh_client import SSHClient
 
         client = SSHClient(host, port, user, password=password, key=key)
         probe = await client.tcp_probe(port)
         if not probe.ok:
-            return False, probe.error
+            return False, probe.error, probe.reason
         if password or key:
             auth = await client.check_auth()
             if not auth.ok:
-                return False, auth.error
-        return True, None
+                return False, auth.error, auth.reason
+        return True, None, None
 
     async def async_step_hostapi_connection(self, user_input=None):
         """Original hostapi-instance connection form."""
@@ -331,13 +353,14 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(unique_id)
             self._abort_if_unique_id_configured()
 
-            if await self._validate_connection(host, port, api_key):
+            ok, reason = await self._validate_connection(host, port, api_key)
+            if ok:
                 return self.async_create_entry(
                     title=f"HostAPI ({host})",
                     data=user_input,
                 )
             else:
-                errors["base"] = "cannot_connect"
+                errors["base"] = reason or "cannot_connect"
 
         return self.async_show_form(
             step_id="hostapi_connection",
@@ -377,14 +400,15 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             port = user_input.get(CONF_PORT, 8080)
             api_key = user_input.get(CONF_API_KEY)
 
-            if await self._validate_connection(host, port, api_key):
+            ok, reason = await self._validate_connection(host, port, api_key)
+            if ok:
                 self._data.update(user_input)
                 return self.async_update_reload_and_abort(
                     entry,
                     data_updates=self._data,
                 )
             else:
-                errors["base"] = "cannot_connect"
+                errors["base"] = reason or "cannot_connect"
 
         return self.async_show_form(
             step_id="reconfigure",
@@ -433,22 +457,29 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _validate_connection(
         self, host: str, port: int, api_key: str
-    ) -> bool:
-        """Validate connection to hostapi server."""
+    ) -> tuple[bool, str | None]:
+        """Validate connection to hostapi server; returns (ok, reason)."""
+        from .ssh_client import REASON_CANNOT_CONNECT, REASON_INVALID_AUTH
+
         url = f"http://{host}:{port}/auth/password"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=5) as response:
-                    return response.status == 200
+                    status = response.status
         except Exception:
-            return False
+            return False, REASON_CANNOT_CONNECT
+        if status == 200:
+            return True, None
+        if status in (401, 403):
+            return False, REASON_INVALID_AUTH
+        return False, REASON_CANNOT_CONNECT
 
     async def _async_step_host_reconfigure(self, entry, user_input=None):
         """Reconfigure connection/auth of an SSH host entry."""
         errors = {}
 
         if user_input is not None:
-            ok, _error = await self._validate_ssh(
+            ok, _error, reason = await self._validate_ssh(
                 user_input.get(CONF_HOST),
                 int(user_input.get(CONF_SSH_PORT, DEFAULT_SSH_PORT)),
                 user_input.get(CONF_SSH_USER, DEFAULT_SSH_USER),
@@ -460,7 +491,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data.update(user_input)
                 return self.async_update_reload_and_abort(entry,
                                                           data_updates=data)
-            errors["base"] = "cannot_connect"
+            errors["base"] = reason or "cannot_connect"
 
         return self.async_show_form(
             step_id="host_connection",
@@ -531,9 +562,48 @@ class OpnsenseOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input=None):
         """Manage global OPNsense options."""
+        errors = None
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            ok, reason = await self._validate(user_input)
+            if ok:
+                return self.async_create_entry(title="", data=user_input)
+            errors = {"base": reason or "cannot_connect"}
 
+        return self.async_show_form(
+            step_id="opnsense_options",
+            data_schema=self._options_schema(),
+            errors=errors,
+        )
+
+    async def _validate(self, user_input):
+        """Probe with the submitted values, falling back to saved ones."""
+        from .button import async_validate_opnsense
+        from .ssh_client import REASON_CANNOT_CONNECT
+
+        opts = self.config_entry.options
+        entry_data = self.config_entry.data
+        url = (user_input.get(CONF_OPNSENSE_URL)
+               or opts.get(CONF_OPNSENSE_URL,
+                           entry_data.get(CONF_OPNSENSE_URL, "")))
+        key = (user_input.get(CONF_OPNSENSE_API_KEY)
+               or opts.get(CONF_OPNSENSE_API_KEY,
+                           entry_data.get(CONF_OPNSENSE_API_KEY, "")))
+        secret = (user_input.get(CONF_OPNSENSE_API_SECRET)
+                  or opts.get(CONF_OPNSENSE_API_SECRET,
+                              entry_data.get(CONF_OPNSENSE_API_SECRET, "")))
+        verify = user_input.get(
+            CONF_OPNSENSE_VERIFY_SSL,
+            opts.get(CONF_OPNSENSE_VERIFY_SSL,
+                     entry_data.get(CONF_OPNSENSE_VERIFY_SSL, True)),
+        )
+        async with aiohttp.ClientSession() as session:
+            ok, reason = await async_validate_opnsense(
+                session, url, key, secret, verify_ssl=verify)
+        if not ok and not reason:
+            return False, REASON_CANNOT_CONNECT
+        return ok, reason
+
+    def _options_schema(self):
         opts = self.config_entry.options
         return self.async_show_form(
             step_id="opnsense_options",
