@@ -127,7 +127,8 @@
   },
   "entity": {
     "binary_sensor": {
-      "alive": { "name": "Alive" }
+      "alive": { "name": "Alive" },
+      "switch_pending": { "name": "OS Switch Pending" }
     },
     "sensor": {
       "current_os": { "name": "Current OS" },
@@ -139,9 +140,6 @@
     },
     "button": {
       "cancel_switch": { "name": "Cancel OS Switch" }
-    },
-    "binary_sensor": {
-      "switch_pending": { "name": "OS Switch Pending" }
     }
   },
   "config_subentries": {

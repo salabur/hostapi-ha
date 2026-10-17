@@ -68,8 +68,13 @@ async def async_setup(hass, config):
 
 
 async def _async_reload_entry(hass, entry) -> None:
-    """Reload the entry when its data/options/sub-entries change."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Reload the entry when its data/options/sub-entries change.
+
+    Uses the debounced scheduler: a reconfigure fires both
+    ``async_update_reload_and_abort`` and this listener, and the two
+    coalesce into one reload instead of racing.
+    """
+    await hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
