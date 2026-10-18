@@ -87,6 +87,12 @@ class _HostSSHButton(CoordinatorEntity, ButtonEntity):
         raise NotImplementedError
 
     async def async_press(self):
+        if not self._cmd:
+            # e.g. boot-to-OS switching left unconfigured
+            _LOGGER.debug(
+                "Skipping %s: no command configured",
+                self._attr_name)
+            return
         data = self.coordinator.data or {}
         if data.get("offline") and not host_setting(
                 self.entry, "allow_offline_commands", False):
@@ -136,6 +142,11 @@ class HostBootOsButton(_HostSSHButton):
                          f"boot_to_{target_os}",
                          "mdi:microsoft-windows"
                          if target_os == "windows" else "mdi:linux")
+
+    @property
+    def available(self) -> bool:
+        # no boot-to-OS command configured -> entity shown but disabled
+        return bool(host_setting(self.entry, "boot_os_cmd", ""))
 
     @property
     def _cmd(self) -> str:

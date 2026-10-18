@@ -57,21 +57,14 @@ KIND_HOSTAPI = "hostapi"
 KIND_HOST = "host"
 KIND_OPNSENSE = "opnsense"
 
-# Searchable picker over the entities the wake button can trigger
+# Searchable picker over the entities the wake button can trigger.
+# Wrapped in vol.Maybe so "no automation" is a valid, *serializable*
+# empty state - a plain-function validator cannot be serialized to the
+# frontend wire format and broke the whole flow with a 500.
 WAKE_AUTOMATION_SELECTOR = selector.EntitySelector(
     selector.EntitySelectorConfig(domain=["automation", "script"])
 )
-
-
-def _wake_automation_optional(value):
-    """EntitySelector that tolerates the empty string (no automation).
-
-    Saved entries store "" when the user picked nothing; without this
-    wrapper the options flow fails schema validation on open.
-    """
-    if value in (None, ""):
-        return ""
-    return WAKE_AUTOMATION_SELECTOR(value)
+WAKE_AUTOMATION_VALIDATOR = vol.Maybe(WAKE_AUTOMATION_SELECTOR)
 
 DEFAULT_WAKE_ENTITY = "switch.hal_switch_template"
 DEFAULT_HA_URL = "http://homeassistant.local:8123"
@@ -277,12 +270,15 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_SHUTDOWN_CMD,
                         default=DEFAULT_SHUTDOWN_CMD): str,
-                    vol.Required(
+                    vol.Optional(
                         CONF_BOOT_OS_CMD,
+                        description="Boot-to-OS command ({entry} = grub entry);"
+                                    " leave empty to disable boot-to-OS"
+                                    " switching",
                         default=DEFAULT_BOOT_OS_CMD): str,
-                    vol.Required(
+                    vol.Optional(
                         CONF_GRUB_ENTRY_WINDOWS, default="windows"): str,
-                    vol.Required(
+                    vol.Optional(
                         CONF_GRUB_ENTRY_LINUX, default="linux"): str,
                 }
             ),
@@ -307,8 +303,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Optional(
                             CONF_WAKE_AUTOMATION,
                             description="Automation/script to trigger on Wake",
-                            default="",
-                        ): _wake_automation_optional,
+                        ): WAKE_AUTOMATION_VALIDATOR,
                         vol.Optional(
                             CONF_OPNSENSE_INTERFACE, default="",
                             description="OPNsense interface (lan, opt1, ...)"
@@ -557,8 +552,7 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                     vol.Optional(
                         CONF_WAKE_AUTOMATION,
                         description="Automation/script to trigger on Wake",
-                        default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): _wake_automation_optional,
+                    ): WAKE_AUTOMATION_VALIDATOR,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
                         description="OPNsense interface (lan, opt1, ...)",
@@ -737,8 +731,7 @@ class HostOptionsFlow(OptionsFlow):
                     ): str,
                     vol.Optional(
                         CONF_WAKE_AUTOMATION,
-                        default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): _wake_automation_optional,
+                    ): WAKE_AUTOMATION_VALIDATOR,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
                         description="OPNsense interface (lan, opt1, ...)",
