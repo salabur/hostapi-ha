@@ -25,6 +25,29 @@ def host_setting(entry, key: str, default=None):
     return entry.options.get(key, entry.data.get(key, default))
 
 
+async def async_discover_mac(hass, host: str) -> str | None:
+    """Best-effort ARP lookup of the MAC for an IP that just answered.
+
+    Reads the kernel neighbour table in an executor job; returns None
+    when unavailable (containers often lack /proc/net/arp or the entry).
+    """
+
+    def _arp() -> str | None:
+        try:
+            with open("/proc/net/arp", encoding="ascii") as f:
+                for line in f.read_text().splitlines()[1:]:
+                    parts = line.split()
+                    if len(parts) >= 4 and parts[0] == host:
+                        mac = parts[3]
+                        if mac and mac != "00:00:00:00:00:00":
+                            return mac.upper()
+        except OSError:
+            pass
+        return None
+
+    return await hass.async_add_executor_job(_arp)
+
+
 @dataclass
 class HostEntryData:
     """Runtime data stored per 'host' config entry."""
@@ -100,13 +123,19 @@ class HostStateCoordinator(DataUpdateCoordinator):
 
         data = dict(self.data or {})
         if probe.ok:
-            data.update(
-                alive=True,
-                offline=False,
-                missed=0,
-                last_error=None,
-                last_active=datetime.now(timezone.utc).isoformat(),
-            )
+            update = {
+                "alive": True,
+                "offline": False,
+                "missed": 0,
+                "last_error": None,
+                "last_active": datetime.now(timezone.utc).isoformat(),
+            }
+            # Fill the WOL MAC automatically once the host answers
+            if not host_setting(self.entry, "wol_mac"):
+                mac = await async_discover_mac(self.hass, self.ssh._host)
+                if mac:
+                    update["mac"] = mac
+            data.update(**update)
         else:
             missed = int(data.get("missed", 0)) + 1
             data.update(
@@ -115,5 +144,7 @@ class HostStateCoordinator(DataUpdateCoordinator):
                 last_error=probe.error,
                 offline=missed >= self._offline_threshold,
             )
-        self.async_set_updated_data(data)
+        # not async_set_updated_data here: _async_update_data already
+        # dispatches listeners on completion - calling both doubled every
+        # entity update.
         return data

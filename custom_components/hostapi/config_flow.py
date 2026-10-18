@@ -21,6 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 CONF_WAKE_ENTITY = "wake_entity"
 CONF_HA_URL = "ha_url"
 CONF_WAKE_AUTOMATION = "wake_automation"
+CONF_ALLOW_OFFLINE = "allow_offline_commands"
 CONF_OPNSENSE_URL = "opnsense_url"
 CONF_OPNSENSE_API_KEY = "opnsense_api_key"
 CONF_OPNSENSE_API_SECRET = "opnsense_api_secret"
@@ -60,6 +61,17 @@ KIND_OPNSENSE = "opnsense"
 WAKE_AUTOMATION_SELECTOR = selector.EntitySelector(
     selector.EntitySelectorConfig(domain=["automation", "script"])
 )
+
+
+def _wake_automation_optional(value):
+    """EntitySelector that tolerates the empty string (no automation).
+
+    Saved entries store "" when the user picked nothing; without this
+    wrapper the options flow fails schema validation on open.
+    """
+    if value in (None, ""):
+        return ""
+    return WAKE_AUTOMATION_SELECTOR(value)
 
 DEFAULT_WAKE_ENTITY = "switch.hal_switch_template"
 DEFAULT_HA_URL = "http://homeassistant.local:8123"
@@ -296,7 +308,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_WAKE_AUTOMATION,
                             description="Automation/script to trigger on Wake",
                             default="",
-                        ): WAKE_AUTOMATION_SELECTOR,
+                        ): _wake_automation_optional,
                         vol.Optional(
                             CONF_OPNSENSE_INTERFACE, default="",
                             description="OPNsense interface (lan, opt1, ...)"
@@ -546,7 +558,7 @@ class HostAPIOptionsFlow(OptionsFlowWithReload):
                         CONF_WAKE_AUTOMATION,
                         description="Automation/script to trigger on Wake",
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): WAKE_AUTOMATION_SELECTOR,
+                    ): _wake_automation_optional,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
                         description="OPNsense interface (lan, opt1, ...)",
@@ -726,15 +738,27 @@ class HostOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_WAKE_AUTOMATION,
                         default=opts.get(CONF_WAKE_AUTOMATION, ""),
-                    ): WAKE_AUTOMATION_SELECTOR,
+                    ): _wake_automation_optional,
                     vol.Optional(
                         CONF_OPNSENSE_INTERFACE,
                         description="OPNsense interface (lan, opt1, ...)",
                         default=opts.get(CONF_OPNSENSE_INTERFACE, ""),
                     ): str,
+                    vol.Optional(
+                        CONF_ALLOW_OFFLINE,
+                        description="Run reboot/shutdown even when the"
+                                    " alive check says the host is offline",
+                        default=opts.get(
+                            CONF_ALLOW_OFFLINE,
+                            data.get(CONF_ALLOW_OFFLINE, False)),
+                    ): bool,
                 }
             ),
         )
+
+    # The init step shows the form with step_id "host_options"; HA calls
+    # the handler for that step id on submit.
+    async_step_host_options = async_step_init
 
 
 class HostCommandSubentryFlow(ConfigSubentryFlow):

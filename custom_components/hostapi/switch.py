@@ -130,7 +130,8 @@ def _remove_stale_service_entities(
     """
     registry = er.async_get(hass)
     wanted = {f"{entry.entry_id}{marker}{name}" for name in service_names}
-    for entity_entry in registry.async_entries_for_config_entry(entry.entry_id):
+    for entity_entry in er.async_entries_for_config_entry(
+            registry, entry.entry_id):
         if entity_entry.domain != domain:
             continue
         uid = entity_entry.unique_id

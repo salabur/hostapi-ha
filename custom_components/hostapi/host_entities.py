@@ -88,9 +88,11 @@ class _HostSSHButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self):
         data = self.coordinator.data or {}
-        if data.get("offline"):
+        if data.get("offline") and not host_setting(
+                self.entry, "allow_offline_commands", False):
             _LOGGER.warning(
-                "Skipping %s: host %s is offline",
+                "Skipping %s: host %s is offline (enable"
+                " allow_offline_commands to run anyway)",
                 self._attr_name, self.entry.data.get("host"))
             return
         result = await self.coordinator.ssh.run(self._cmd)
@@ -181,7 +183,13 @@ class HostWakeButton(ButtonEntity):
 
     @property
     def _mac(self):
-        return host_setting(self.entry, "wol_mac")
+        configured = host_setting(self.entry, "wol_mac")
+        if configured:
+            return configured
+        # ARP-discovered during the alive poll (HostStateCoordinator)
+        coordinator = getattr(self.entry.runtime_data, "coordinator", None)
+        data = getattr(coordinator, "data", None) or {}
+        return data.get("mac")
 
     def _opnsense(self) -> dict | None:
         """Global OPNsense settings, resolved with this host's interface."""
@@ -280,13 +288,46 @@ def _prune_stale_command_entities(hass, entry, command_subentries) -> None:
             registry.async_remove(reg_entry.entity_id)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up host entities from a 'host' config entry."""
-    coordinator = entry.runtime_data.coordinator
-    command_subentries = [
+def _host_command_subentries(entry):
+    return [
         sub for sub in entry.subentries.values()
         if sub.subentry_type == SUBENTRY_TYPE_COMMAND
     ]
+
+
+async def async_setup_binary_sensors(hass, entry, async_add_entities):
+    """Platform setup: the alive binary sensor."""
+    async_add_entities([
+        HostAliveBinarySensor(entry, entry.runtime_data.coordinator)])
+
+
+async def async_setup_sensors(hass, entry, async_add_entities):
+    """Platform setup: the last-active sensor."""
+    async_add_entities([
+        HostLastActiveSensor(entry, entry.runtime_data.coordinator)])
+
+
+async def async_setup_buttons(hass, entry, async_add_entities):
+    """Platform setup: command + wake buttons."""
+    coordinator = entry.runtime_data.coordinator
+    command_subentries = _host_command_subentries(entry)
+
+    async_add_entities([
+        HostRebootButton(entry, coordinator),
+        HostShutdownButton(entry, coordinator),
+        HostBootOsButton(entry, coordinator, "windows"),
+        HostBootOsButton(entry, coordinator, "linux"),
+        HostWakeButton(hass, entry),
+    ] + [HostCommandButton(entry, coordinator, sub)
+         for sub in command_subentries])
+
+    _prune_stale_command_entities(hass, entry, command_subentries)
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up all host entities (used directly by the mocked test suite)."""
+    coordinator = entry.runtime_data.coordinator
+    command_subentries = _host_command_subentries(entry)
 
     entities = [
         HostAliveBinarySensor(entry, coordinator),

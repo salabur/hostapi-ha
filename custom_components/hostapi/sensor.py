@@ -271,6 +271,13 @@ class HostAPIOsStatusSensor(CoordinatorEntity, SensorEntity):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up HostAPI sensors from config entry."""
+    from . import KIND_HOST
+    from .host_entities import async_setup_sensors
+
+    if entry.data.get("kind") == KIND_HOST:
+        await async_setup_sensors(hass, entry, async_add_entities)
+        return
+
     entities = [
         HostAPIHealthSensor(entry),
         HostAPIDisplayProfileSensor(entry),

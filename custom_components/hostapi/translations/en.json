@@ -7,7 +7,9 @@
         "data": {
           "kind": "Device type"
         },
-        "error": { "cannot_connect": "Cannot connect" }
+        "error": {
+          "cannot_connect": "Cannot connect"
+        }
       },
       "hostapi_connection": {
         "title": "HostAPI instance",
@@ -126,7 +128,8 @@
           "boot_os_cmd": "Boot-to-OS command ({entry} = grub entry)",
           "wol_mac": "WOL MAC address",
           "wake_automation": "Automation/script to trigger on Wake",
-          "opnsense_interface": "OPNsense interface (lan, opt1, ...)"
+          "opnsense_interface": "OPNsense interface (lan, opt1, ...)",
+          "allow_offline_commands": "Run commands even when offline"
         }
       },
       "opnsense_options": {
@@ -149,19 +152,33 @@
   },
   "entity": {
     "binary_sensor": {
-      "alive": { "name": "Alive" },
-      "switch_pending": { "name": "OS Switch Pending" }
+      "alive": {
+        "name": "Alive"
+      },
+      "switch_pending": {
+        "name": "OS Switch Pending"
+      }
     },
     "sensor": {
-      "current_os": { "name": "Current OS" },
-      "last_active": { "name": "Last Active" },
-      "os_status": { "name": "OS Switch Status" }
+      "current_os": {
+        "name": "Current OS"
+      },
+      "last_active": {
+        "name": "Last Active"
+      },
+      "os_status": {
+        "name": "OS Switch Status"
+      }
     },
     "select": {
-      "boot_os": { "name": "Boot OS" }
+      "boot_os": {
+        "name": "Boot OS"
+      }
     },
     "button": {
-      "cancel_switch": { "name": "Cancel OS Switch" }
+      "cancel_switch": {
+        "name": "Cancel OS Switch"
+      }
     }
   },
   "config_subentries": {
@@ -197,8 +214,14 @@
       "name": "Switch OS",
       "description": "Reboot into the given OS.",
       "fields": {
-        "target": { "name": "Target OS", "description": "linux or windows" },
-        "delay_seconds": { "name": "Delay", "description": "Countdown seconds" }
+        "target": {
+          "name": "Target OS",
+          "description": "linux or windows"
+        },
+        "delay_seconds": {
+          "name": "Delay",
+          "description": "Countdown seconds"
+        }
       }
     },
     "cancel_os_switch": {

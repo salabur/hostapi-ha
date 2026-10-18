@@ -1,0 +1,19 @@
+run_command:
+  name: Run command
+  description: >-
+    Run one SSH command on a generic host (kind=host) config entry.
+    The command templates exposed as buttons are usually enough; this
+    service makes arbitrary commands callable from automations. Note it
+    bypasses the per-host "run commands even when offline" gate and
+    reports failures only via the HA log.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: The config entry ID of the generic SSH host.
+      required: true
+      example: hostapi_host_192.0.2.50
+    command:
+      name: Command
+      description: Shell command to run on the host over SSH.
+      required: true
+      example: "uptime"

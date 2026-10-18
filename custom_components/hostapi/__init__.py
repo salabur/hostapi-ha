@@ -4,7 +4,9 @@ import logging
 from dataclasses import dataclass
 
 import aiohttp
+import voluptuous as vol
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from .coordinator import HostAPICoordinator, HostAPIData, ServiceStateCoordinator
 from .host_coordinator import HostEntryData, HostStateCoordinator
@@ -17,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 KIND_HOSTAPI = "hostapi"
 KIND_HOST = "host"
 KIND_OPNSENSE = "opnsense"
+OPNSENSE_CACHE_KEY = "opnsense_config"
 
 
 @dataclass
@@ -30,9 +33,11 @@ class OpnsenseData:
     verify_ssl: bool = True
 
 
-def async_get_opnsense_config(hass: HomeAssistant) -> OpnsenseData | None:
-    """Return the global OPNsense config, if a kind=opnsense entry exists."""
+def _walk_opnsense_config(hass: HomeAssistant) -> OpnsenseData | None:
+    """Resolve the global OPNsense config by walking the entries."""
     for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.disabled_by:
+            continue
         if entry.data.get("kind") != KIND_OPNSENSE:
             continue
         merged = {**entry.data, **entry.options}
@@ -44,6 +49,30 @@ def async_get_opnsense_config(hass: HomeAssistant) -> OpnsenseData | None:
             verify_ssl=merged.get("opnsense_verify_ssl", True),
         )
     return None
+
+
+def async_get_opnsense_config(hass: HomeAssistant) -> OpnsenseData | None:
+    """Return the global OPNsense config, if a kind=opnsense entry exists.
+
+    Cached in hass.data (written by the opnsense entry's setup, which
+    re-runs on every reload) because ``available`` is polled per entity
+    per refresh; the entry walk is the fallback.
+    """
+    cached = None
+    store = hass.data.get(DOMAIN)
+    if isinstance(store, dict):
+        cached = store.get(OPNSENSE_CACHE_KEY)
+    if cached is not None:
+        return cached
+    return _walk_opnsense_config(hass)
+
+
+def _set_opnsense_cache(hass, config: OpnsenseData | None) -> None:
+    store = hass.data.setdefault(DOMAIN, {})
+    if config is None:
+        store.pop(OPNSENSE_CACHE_KEY, None)
+    else:
+        store[OPNSENSE_CACHE_KEY] = config
 
 
 def get_device_info(entry) -> dict:
@@ -64,17 +93,73 @@ HOST_PLATFORMS = ["binary_sensor", "sensor", "button"]
 
 
 async def async_setup(hass, config):
+    """Set up integration-level services."""
+    _register_run_command_service(hass)
+    return True
+
+
+def _register_run_command_service(hass) -> None:
+    from .ssh_client import SSHResult
+
+    async def _handle_run_command(call) -> None:
+        """Run one SSH command on a generic host entry."""
+        entry = hass.config_entries.async_get_entry(call.data["entry_id"])
+        if entry is None or entry.data.get("kind") != KIND_HOST:
+            _LOGGER.warning(
+                "run_command: no generic host entry %s",
+                call.data["entry_id"])
+            return
+        coordinator = getattr(entry.runtime_data, "coordinator", None)
+        if coordinator is None:
+            _LOGGER.warning(
+                "run_command: entry %s is not loaded", entry.entry_id)
+            return
+        result: SSHResult = await coordinator.ssh.run(call.data["command"])
+        if not result.ok:
+            _LOGGER.error(
+                "run_command on %s failed: %s",
+                entry.data.get("host"),
+                result.error or result.stderr)
+        elif result.stderr.strip():
+            _LOGGER.info(
+                "run_command on %s finished with stderr: %s",
+                entry.data.get("host"), result.stderr)
+
+    hass.services.async_register(
+        DOMAIN, "run_command", _handle_run_command,
+        schema=vol.Schema({
+            vol.Required("entry_id"): cv.string,
+            vol.Required("command"): cv.string,
+        }),
+    )
+
+
+async def async_migrate_entry(hass, entry) -> bool:
+    """Migrate pre-v2 config entries.
+
+    The flow declares VERSION = 2 (since 0.4.5, for sub-entry support)
+    but entries created by older flows are version 1 with an unchanged
+    data layout - without this handler their setup fails with
+    "Migration handler not found".
+    """
+    if entry.version > 2:
+        return False
+    if entry.version < 2:
+        hass.config_entries.async_update_entry(
+            entry, version=2, minor_version=1)
     return True
 
 
 async def _async_reload_entry(hass, entry) -> None:
     """Reload the entry when its data/options/sub-entries change.
 
-    Uses the debounced scheduler: a reconfigure fires both
-    ``async_update_reload_and_abort`` and this listener, and the two
-    coalesce into one reload instead of racing.
+    Update listeners must be coroutine functions (HA wraps them in
+    ``async_create_task``), but ``async_schedule_reload`` itself is a
+    synchronous callback - awaiting it was ``await None``. It also
+    coalesces the double fire from a reconfigure (reload helper +
+    update listener).
     """
-    await hass.config_entries.async_schedule_reload(entry.entry_id)
+    hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
@@ -82,10 +167,24 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     if entry.data.get("kind") == KIND_OPNSENSE:
         # Config-only entry: it stores the global OPNsense settings that the
         # wake buttons of every host read; no entities, no platforms.
-        entry.runtime_data = async_get_opnsense_config(hass) or OpnsenseData()
+        # Compute fresh (the cache would be the pre-reload value).
+        entry.runtime_data = _walk_opnsense_config(hass) or OpnsenseData()
+        _set_opnsense_cache(hass, entry.runtime_data)
         return True
 
     client_session = aiohttp.ClientSession()
+
+    try:
+        return await _async_setup_network_entry(hass, entry, client_session)
+    except Exception:
+        # HA retries the setup; without closing here every retry leaks
+        # another ClientSession.
+        await client_session.close()
+        raise
+
+
+async def _async_setup_network_entry(hass, entry, client_session) -> bool:
+    """Set up the networked entry kinds (host + hostapi)."""
 
     if entry.data.get("kind") == KIND_HOST:
         coordinator = HostStateCoordinator(hass, entry, client_session)
@@ -163,6 +262,7 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     """Unload a config entry."""
     if entry.data.get("kind") == KIND_OPNSENSE:
+        _set_opnsense_cache(hass, None)
         return True
     platforms = (HOST_PLATFORMS
                  if entry.data.get("kind") == KIND_HOST else PLATFORMS)

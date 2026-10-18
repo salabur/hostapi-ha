@@ -133,6 +133,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
     button exists, and only when the user enabled it in the web UI
     (service detail panel). The switch already covers start/stop.
     """
+    from . import KIND_HOST
+    from .host_entities import async_setup_buttons
+
+    if entry.data.get("kind") == KIND_HOST:
+        await async_setup_buttons(hass, entry, async_add_entities)
+        return
+
     from .service_entities import make_service_entity_sync, managed_services
 
     entities = []
@@ -194,7 +201,8 @@ def _remove_stale_service_buttons(hass, entry, service_names: list) -> None:
         for marker in _SERVICE_BUTTON_MARKERS
         for name in service_names
     }
-    for entity_entry in registry.async_entries_for_config_entry(entry.entry_id):
+    for entity_entry in er.async_entries_for_config_entry(
+            registry, entry.entry_id):
         if entity_entry.domain != "button":
             continue
         uid = entity_entry.unique_id
