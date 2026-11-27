@@ -352,7 +352,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             host = user_input.get(CONF_HOST)
-            port = user_input.get(CONF_PORT, 8080)
+            port = user_input.get(CONF_PORT, 38080)
             api_key = user_input.get(CONF_API_KEY)
 
             unique_id = f"hostapi_{host}"
@@ -375,7 +375,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Schema(
                     {
                         vol.Required(CONF_HOST): str,
-                        vol.Optional(CONF_PORT, default=8080): int,
+                        vol.Optional(CONF_PORT, default=38080): int,
                         vol.Required(CONF_API_KEY): str,
                         vol.Optional(
                             CONF_WAKE_ENTITY,
@@ -404,7 +404,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             host = user_input.get(CONF_HOST)
-            port = user_input.get(CONF_PORT, 8080)
+            port = user_input.get(CONF_PORT, 38080)
             api_key = user_input.get(CONF_API_KEY)
 
             ok, reason = await self._validate_connection(host, port, api_key)
@@ -422,7 +422,7 @@ class HostAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST)): str,
-                    vol.Optional(CONF_PORT, default=entry.data.get(CONF_PORT, 8080)): int,
+                    vol.Optional(CONF_PORT, default=entry.data.get(CONF_PORT, 38080)): int,
                     vol.Required(CONF_API_KEY, default=entry.data.get(CONF_API_KEY)): str,
                     vol.Optional(
                         CONF_WAKE_ENTITY,

@@ -23,7 +23,7 @@ async def async_setup_entry(hass, entry):
 def from_zeroconf_zeroconf_service_info(service_info, hostname: str):
     """Convert zeroconf service info to config entry data."""
     host = service_info.hostname or hostname.replace(".local.", "")
-    port = service_info.port or 8080
+    port = service_info.port or 38080
     return {
         "host": host,
         "port": port,
